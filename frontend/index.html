@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <title>Dashboard Sensor IoT</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    .status { margin-top: 10px; }
+    .led { display:inline-block; width:16px; height:16px; border-radius:50%; margin-right:8px; vertical-align:middle; }
+    .led.off { background:#ddd; }
+    .led.green { background:green; }
+    .led.yellow { background:gold; }
+    .led.red { background:red; }
+    .card { padding:12px; border:1px solid #ddd; border-radius:8px; width:320px; }
+    button { padding:8px 12px; margin-right:8px; }
+  </style>
+</head>
+<body>
+  <h2>Dashboard Sensor - IoT</h2>
+
+  <div id="latest" class="card">
+    <div><strong>Terakhir:</strong> <span id="ts">-</span></div>
+    <div>Suhu: <span id="suhu">-</span> °C</div>
+    <div>Humidity: <span id="hum">-</span> %</div>
+    <div>Lux: <span id="lux">-</span></div>
+    <div class="status">
+      <span class="led off" id="led-indicator"></span>
+      <span id="status-text">Status suhu: -</span>
+    </div>
+  </div>
+
+  <h3>Kontrol Pompa</h3>
+  <button onclick="sendRelay('ON')">Pompa ON</button>
+  <button onclick="sendRelay('OFF')">Pompa OFF</button>
+  <div id="relay-result"></div>
+
+<script>
+const POLL_INTERVAL = 5000; // ms (ganti sesuai kebutuhan)
+const API_BASE = ''; // kosong => asumsi file serve di origin yang sama; jika beda tambahkan host:port, contoh: http://localhost:5000
+
+async function fetchLatest() {
+  try {
+    const res = await fetch(API_BASE + '/data_sensor');
+    if (!res.ok) throw new Error('HTTP error ' + res.status);
+    const data = await res.json();
+    if (!Array.isArray(data) || data.length === 0) {
+      document.getElementById('status-text').innerText = "Tidak ada data";
+      return;
+    }
+    // data terurut DESC di backend (lihat SQL): ambil first element
+    const latest = data[0];
+    const suhu = Number(latest.suhu);
+    document.getElementById('ts').innerText = latest.timestamp || '-';
+    document.getElementById('suhu').innerText = suhu.toFixed(1);
+    document.getElementById('hum').innerText = Number(latest.humidity).toFixed(1);
+    document.getElementById('lux').innerText = latest.lux !== null ? latest.lux : '-';
+
+    // tentukan indikator LED sesuai logika
+    const led = document.getElementById('led-indicator');
+    const statusText = document.getElementById('status-text');
+
+    // reset class
+    led.className = 'led';
+
+    if (suhu > 35) {
+      led.classList.add('red');
+      statusText.innerText = 'Suhu > 35°C → MERAH (bahaya)';
+    } else if (suhu >= 30 && suhu <= 35) {
+      led.classList.add('yellow');
+      statusText.innerText = '30°C ≤ Suhu ≤ 35°C → KUNING (peringatan)';
+    } else {
+      led.classList.add('green');
+      statusText.innerText = 'Suhu < 30°C → HIJAU (aman)';
+    }
+
+  } catch (err) {
+    console.error(err);
+    document.getElementById('status-text').innerText = 'Error mengambil data';
+  }
+}
+
+async function sendRelay(state) {
+  try {
+    const res = await fetch(API_BASE + '/relay', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({state})
+    });
+    const j = await res.json();
+    document.getElementById('relay-result').innerText = JSON.stringify(j);
+  } catch (err) {
+    document.getElementById('relay-result').innerText = 'Gagal kirim perintah';
+  }
+}
+
+// polling periodik
+fetchLatest();
+setInterval(fetchLatest, POLL_INTERVAL);
+</script>
+</body>
+</html>
