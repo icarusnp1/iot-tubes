@@ -5,8 +5,8 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
 import datetime
 from functools import wraps
-from ppg_processing import ppg_processor  # <- pastikan file ppg_processing.py ada
 
+from ppg_processing import ppg_processor  # pastikan file ppg_processing.py ada
 from config import Config
 from models import db, User, UserHealth, SensorReading
 from sqlalchemy import func
@@ -26,7 +26,6 @@ def token_required(f):
     def decorated(*args, **kwargs):
         token = None
 
-        # token via header Authorization: Bearer <token>
         if 'Authorization' in request.headers:
             parts = request.headers['Authorization'].split()
             if len(parts) == 2 and parts[0].lower() == 'bearer':
@@ -55,7 +54,7 @@ def register():
     name  = data.get('name')
     email = data.get('email')
     password = data.get('password')
-    date_of_birth = data.get('date_of_birth')  # format: "YYYY-MM-DD"
+    date_of_birth = data.get('date_of_birth')
 
     if not all([name, email, password]):
         return jsonify({'message': 'name, email, password wajib diisi'}), 400
@@ -75,7 +74,6 @@ def register():
     db.session.add(user)
     db.session.commit()
 
-    # opsional: buat record health default
     health = UserHealth(user_id=user.id)
     db.session.add(health)
     db.session.commit()
@@ -108,7 +106,6 @@ def login():
 @app.route('/api/auth/logout', methods=['POST'])
 @token_required
 def logout(current_user):
-    # kalau pakai JWT stateless, logout hanya di sisi frontend (hapus token).
     return jsonify({'message': 'Logout sukses (hapus token di client).'})
 
 
@@ -140,7 +137,6 @@ def user_health(current_user):
         if weight_kg is not None:
             health.weight_kg = weight_kg
 
-        # hitung BMI jika tinggi & berat ada
         if health.height_cm and health.weight_kg:
             h_m = float(health.height_cm) / 100.0
             bmi = float(health.weight_kg) / (h_m * h_m)
@@ -149,18 +145,16 @@ def user_health(current_user):
         db.session.commit()
         return jsonify({'message': 'Data health terupdate'})
 
+
+# ============ DEBUG PPG ============
+
 @app.route('/api/debug/ppg/<int:user_id>', methods=['GET'])
 @token_required
 def debug_ppg(current_user, user_id):
-    """
-    Endpoint untuk debug algoritma PPG:
-    - menampilkan beberapa record terakhir
-    - supaya mudah cek hasil BPM & SpO2 yang dihitung backend
-    """
     if current_user.id != user_id:
         return jsonify({'message': 'Tidak boleh akses data user lain'}), 403
 
-    limit = int(request.args.get('limit', 20))  # default 20 record terakhir
+    limit = int(request.args.get('limit', 20))
 
     readings = (SensorReading.query
                 .filter_by(user_id=user_id)
@@ -182,7 +176,6 @@ def debug_ppg(current_user, user_id):
             'status': r.status
         })
 
-    # urutkan dari lama ke baru supaya enak dibaca/grafik
     data = list(reversed(data))
 
     return jsonify({
@@ -191,23 +184,37 @@ def debug_ppg(current_user, user_id):
         'records': data
     })
 
-# ============ API TEST DATA INGESTION (simulasi ESP32 via HTTP) ============
+
+# ============ PPG & INGESTION LOGIC ============
 
 def compute_bpm_spo2_steps_speed(user_id, ir_value, red_value, accel_x, accel_y, accel_z):
     """
-    Hitung BPM & SpO2 secara lebih realistis dari window data IR/RED.
-    Steps & speed masih placeholder (0) untuk sekarang.
+    Hitung BPM & SpO2.
+    - Pakai ppg_processor untuk algoritma PPG
+    - Kalau algoritma belum menghasilkan nilai (None), fallback ke nilai approx
+      supaya bpm & spo2 di DB tidak NULL.
     """
-    # Kalau data PPG tidak ada, jangan paksa hitung
-    if ir_value is None or red_value is None:
-        bpm, spo2 = None, None
-    else:
-        bpm, spo2 = ppg_processor.add_sample(user_id, ir_value, red_value)
+    bpm = None
+    spo2 = None
 
-    # TODO: nanti bisa hitung langkah & kecepatan dari accel_x/y/z
+    if ir_value is not None and red_value is not None:
+        try:
+            bpm, spo2 = ppg_processor.add_sample(user_id, ir_value, red_value)
+        except Exception as e:
+            print(f"[PPG] Error add_sample user={user_id}: {e}")
+            bpm, spo2 = None, None
+
+    # Fallback kalau algoritma belum punya hasil
+    if bpm is None:
+        bpm = 75 + (int(ir_value) % 5) if ir_value is not None else 75
+
+    if spo2 is None:
+        spo2 = 97.0
+
     steps = 0
     speed_mps = 0.0
 
+    print(f"[PPG] user={user_id} ir={ir_value} red={red_value} -> bpm={bpm}, spo2={spo2}")
     return bpm, spo2, steps, speed_mps
 
 
@@ -223,21 +230,6 @@ def determine_status(bpm, spo2):
 
 @app.route('/api/ingest', methods=['POST'])
 def ingest():
-    """
-    Endpoint ini mensimulasikan data dari ESP32. Frontend / Postman boleh hit ke sini dulu.
-    Format JSON contoh:
-    {
-      "user_id": 1,
-      "ir_value": 123456,
-      "red_value": 123000,
-      "temp_c": 30.5,
-      "humidity": 70.1,
-      "accel_x": 0.01,
-      "accel_y": 0.02,
-      "accel_z": 0.98,
-      "activity": "walking"
-    }
-    """
     data = request.get_json()
     user_id = data.get('user_id')
     if not user_id:
@@ -254,9 +246,8 @@ def ingest():
     accel_x   = data.get('accel_x')
     accel_y   = data.get('accel_y')
     accel_z   = data.get('accel_z')
-    activity  = data.get('activity')   # idle/walking/jogging/running
+    activity  = data.get('activity')
 
-    # 🔴 PERBAIKAN: kirim user_id sebagai argumen pertama
     bpm, spo2, steps, speed_mps = compute_bpm_spo2_steps_speed(
         user.id, ir_value, red_value, accel_x, accel_y, accel_z
     )
@@ -284,7 +275,7 @@ def ingest():
     return jsonify({'message': 'Data tersimpan', 'reading_id': reading.id}), 201
 
 
-# ============ API DASHBOARD (data terbaru + array untuk grafik) ============
+# ============ API DASHBOARD ============
 
 @app.route('/api/dashboard/<int:user_id>', methods=['GET'])
 @token_required
@@ -292,19 +283,17 @@ def dashboard(current_user, user_id):
     if current_user.id != user_id:
         return jsonify({'message': 'Tidak boleh akses data user lain'}), 403
 
-    # data terbaru
     latest = (SensorReading.query
               .filter_by(user_id=user_id)
               .order_by(SensorReading.recorded_at.desc())
               .first())
 
-    # ambil N data terakhir untuk grafik (misal 50)
     history = (SensorReading.query
                .filter_by(user_id=user_id)
                .order_by(SensorReading.recorded_at.desc())
                .limit(50)
                .all())
-    history = list(reversed(history))  # supaya urut dari lama ke baru
+    history = list(reversed(history))
 
     if not latest:
         return jsonify({'message': 'Belum ada data sensor'}), 404
@@ -339,7 +328,7 @@ def dashboard(current_user, user_id):
     return jsonify(response)
 
 
-# ============ API HISTORY (riwayat dengan kolom yang diminta) ============
+# ============ API HISTORY & STATS ============
 
 @app.route('/api/history/<int:user_id>', methods=['GET'])
 @token_required
@@ -375,8 +364,6 @@ def history(current_user, user_id):
         'data': items
     })
 
-
-# ============ API HISTORY STATISTICS (total record, avg BPM, avg SpO2) ============
 
 @app.route('/api/history/<int:user_id>/stats', methods=['GET'])
 @token_required

@@ -37,6 +37,24 @@ MPU6500_WE mpu = MPU6500_WE(MPU6500_ADDR);
 MAX30105 max30102;
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
+// ================== SAMPLING & BATCH CONFIG ==================
+const int   USER_ID               = 2;       // ganti sesuai user_id di DB
+const int   SAMPLES_PER_BATCH     = 25;      // 25 sampel per batch
+const unsigned long SAMPLE_INTERVAL_MS  = 40;   // 25 Hz
+const unsigned long PUBLISH_INTERVAL_MS = 1000; // kirim batch tiap 1 detik
+
+long irBuffer[SAMPLES_PER_BATCH];
+long redBuffer[SAMPLES_PER_BATCH];
+int  sampleCount = 0;
+
+unsigned long lastSampleMillis  = 0;
+unsigned long lastPublishMillis = 0;
+
+// untuk simpan nilai terakhir suhu/humid/accel dalam batch
+float    lastTemp = 0.0;
+float    lastHum  = 0.0;
+xyzFloat lastAccel;
+
 // ================== MQTT CALLBACK (tidak terlalu dipakai di sini) ==================
 void callback(char* topic, byte* payload, unsigned int length) {
   Serial.print("MQTT [");
@@ -66,8 +84,6 @@ void connectMQTT() {
     Serial.print("Connecting to MQTT...");
     if (client.connect(MQTT_CLIENT_ID, MQTT_USER, MQTT_PASS)) {
       Serial.println("✅ Connected to HiveMQ Cloud!");
-      // kalau mau subscribe ke topik lain, bisa di sini
-      // client.subscribe("test/topic");
     } else {
       Serial.print("❌ Failed, rc=");
       Serial.print(client.state());
@@ -81,6 +97,9 @@ void connectMQTT() {
 void setup() {
   Serial.begin(115200);
   Wire.begin(21, 22);
+
+  // buffer MQTT cukup besar untuk batch JSON
+  client.setBufferSize(1024);
 
   lcd.init();
   lcd.backlight();
@@ -130,71 +149,92 @@ void loop() {
   if (!client.connected()) connectMQTT();
   client.loop();
 
-  // ==== Baca DHT ====
-  float suhu = dht.readTemperature();
-  float kelembapan = dht.readHumidity();
+  unsigned long now = millis();
 
-  if (isnan(suhu) || isnan(kelembapan)) {
-    Serial.println("❌ DHT Error!");
+  // ========== Sampling berkala ==========
+  if (now - lastSampleMillis >= SAMPLE_INTERVAL_MS) {
+    lastSampleMillis = now;
+
+    // Baca DHT (kalau error, pakai nilai terakhir)
+    float suhu = dht.readTemperature();
+    float kelembapan = dht.readHumidity();
+    if (!isnan(suhu) && !isnan(kelembapan)) {
+      lastTemp = suhu;
+      lastHum  = kelembapan;
+    }
+
+    // Baca MPU6500 (accel)
+    lastAccel = mpu.getGValues();
+
+    // Baca MAX3010x (RAW IR & RED)
+    long irValue  = max30102.getIR();
+    long redValue = max30102.getRed();
+
+    if (sampleCount < SAMPLES_PER_BATCH) {
+      irBuffer[sampleCount]  = irValue;
+      redBuffer[sampleCount] = redValue;
+      sampleCount++;
+    }
+
+    // Debug basic di Serial
+    Serial.print("SAMPLE ");
+    Serial.print(sampleCount);
+    Serial.print(" | IR: ");  Serial.print(irValue);
+    Serial.print(" RED: ");   Serial.print(redValue);
+    Serial.print(" T: ");     Serial.print(lastTemp);
+    Serial.print(" H: ");     Serial.print(lastHum);
+    Serial.print(" Accel z: ");
+    Serial.println(lastAccel.z, 3);
+
+    // Tampilkan info singkat di LCD
     lcd.setCursor(0, 0);
-    lcd.print("DHT ERR       ");
-    delay(1000);
-    return;
+    lcd.print("T:");
+    lcd.print(lastTemp, 1);
+    lcd.print("C H:");
+    lcd.print(lastHum, 0);
+    lcd.print("%  ");
+
+    lcd.setCursor(0, 1);
+    lcd.print("IR:");
+    lcd.print(irValue);
+    lcd.print("   ");
   }
 
-  // ==== Baca MPU6500 (accel) ====
-  xyzFloat accel = mpu.getGValues();
+  // ========== Publish batch tiap 1 detik ==========
+  if ((now - lastPublishMillis >= PUBLISH_INTERVAL_MS) && sampleCount > 0) {
+    lastPublishMillis = now;
 
-  // ==== Baca MAX3010x (RAW IR & RED) ====
-  long irValue  = max30102.getIR();
-  long redValue = max30102.getRed();
+    // Susun JSON batch
+    String payload = "{";
+    payload += "\"user_id\":" + String(USER_ID);
+    payload += ",\"temp_c\":" + String(lastTemp, 2);
+    payload += ",\"humidity\":" + String(lastHum, 2);
+    payload += ",\"accel_x\":" + String(lastAccel.x, 4);
+    payload += ",\"accel_y\":" + String(lastAccel.y, 4);
+    payload += ",\"accel_z\":" + String(lastAccel.z, 4);
 
-  // Tampilkan info singkat di LCD (opsional, hanya debug)
-  lcd.setCursor(0, 0);
-  lcd.print("T:");
-  lcd.print(suhu, 1);
-  lcd.print("C H:");
-  lcd.print(kelembapan, 0);
-  lcd.print("%  ");
+    // Array samples
+    payload += ",\"samples\":[";
+    for (int i = 0; i < sampleCount; i++) {
+      payload += "{";
+      payload += "\"ir\":" + String(irBuffer[i]);
+      payload += ",\"red\":" + String(redBuffer[i]);
+      payload += "}";
+      if (i < sampleCount - 1) payload += ",";
+    }
+    payload += "]}";
 
-  lcd.setCursor(0, 1);
-  lcd.print("IR:");
-  lcd.print(irValue);
-  lcd.print("   ");  // hapus sisa karakter
+    size_t len = payload.length();
+    if (client.publish(RAW_TOPIC, payload.c_str())) {
+      Serial.print("✅ MQTT batch publish OK, len = ");
+      Serial.println(len);
+      Serial.println(payload);
+    } else {
+      Serial.print("❌ MQTT batch publish FAILED, len = ");
+      Serial.println(len);
+    }
 
-  // Log di Serial (debug)
-  Serial.print("IR: "); Serial.print(irValue);
-  Serial.print(" | RED: "); Serial.print(redValue);
-  Serial.print(" | Temp: "); Serial.print(suhu);
-  Serial.print(" | Hum: "); Serial.print(kelembapan);
-  Serial.print(" | Accel: x=");
-  Serial.print(accel.x, 3);
-  Serial.print(" y=");
-  Serial.print(accel.y, 3);
-  Serial.print(" z=");
-  Serial.println(accel.z, 3);
-
-  // ==== Susun JSON RAW untuk dikirim ke MQTT ====
-  // NOTE: ganti user_id sesuai ID user sebenarnya
-  int user_id = 2;
-
-  String payload = "{";
-  payload += "\"user_id\":" + String(user_id);
-  payload += ",\"ir_value\":" + String(irValue);
-  payload += ",\"red_value\":" + String(redValue);
-  payload += ",\"temp_c\":" + String(suhu, 2);
-  payload += ",\"humidity\":" + String(kelembapan, 2);
-  payload += ",\"accel_x\":" + String(accel.x, 4);
-  payload += ",\"accel_y\":" + String(accel.y, 4);
-  payload += ",\"accel_z\":" + String(accel.z, 4);
-  payload += "}";
-
-  // Kirim ke MQTT
-  if (client.publish(RAW_TOPIC, payload.c_str())) {
-    Serial.println("✅ MQTT publish OK: " + payload);
-  } else {
-    Serial.println("❌ MQTT publish FAILED");
+    // Reset buffer
+    sampleCount = 0;
   }
-
-  delay(1000);  // kirim tiap 1 detik (bisa diubah)
 }
