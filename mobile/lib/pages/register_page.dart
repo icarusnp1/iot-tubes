@@ -1,36 +1,85 @@
 import 'package:flutter/material.dart';
-import 'home_page.dart';
-import 'register_page.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'login_page.dart';
 
-class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
+class RegisterPage extends StatefulWidget {
+  const RegisterPage({super.key});
 
   @override
-  State<LoginPage> createState() => _LoginPageState();
+  State<RegisterPage> createState() => _RegisterPageState();
 }
 
-class _LoginPageState extends State<LoginPage> {
-  final TextEditingController userC = TextEditingController();
+class _RegisterPageState extends State<RegisterPage> {
+  final TextEditingController nameC = TextEditingController();
+  final TextEditingController emailC = TextEditingController();
   final TextEditingController passC = TextEditingController();
+  final TextEditingController dobC = TextEditingController();
 
-  void login() {
-    String user = userC.text;
+  bool loading = false;
+
+  Future<void> _pickDate() async {
+    DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime(1990, 1, 1),
+      firstDate: DateTime(1900),
+      lastDate: DateTime.now(),
+    );
+    if (picked != null) {
+      dobC.text =
+          '${picked.year.toString().padLeft(4, '0')}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
+    }
+  }
+
+  void register() {
+    String user = nameC.text;
     String pass = passC.text;
+    String email = emailC.text;
+    String dob = dobC.text;
 
-    if (user == "admin" && pass == "12345") {
-      // berpindah halaman
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const HomePage()),
-      );
-    } else {
-      // tampilkan pesan
+    if (user.isEmpty || pass.isEmpty || email.isEmpty || dob.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("Username atau password salah!"),
+          content: Text("Semua field harus diisi!"),
           backgroundColor: Colors.red,
         ),
       );
+      return;
+    } else {
+      
+      // Regex sederhana untuk validasi email
+      RegExp emailRegex = RegExp(r'^[^@]+@[^@]+\.[^@]+');
+      if (!emailRegex.hasMatch(email)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Format email tidak valid!"),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      setState(() {
+        loading = true;
+      });
+
+      // Simulasi proses pendaftaran
+      Future.delayed(const Duration(seconds: 2), () {
+        setState(() {
+          loading = false;
+        });
+
+        // Tampilkan pesan sukses
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Pendaftaran berhasil!"),
+            backgroundColor: Colors.green,
+          ),
+        );
+
+        // Kembali ke halaman login
+        Navigator.pop(context);
+      });
     }
   }
 
@@ -43,10 +92,7 @@ class _LoginPageState extends State<LoginPage> {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              Color(0xFFD9F4E7),
-              Color(0xFFDAEEFA),
-            ],
+            colors: [Color(0xFFD9F4E7), Color(0xFFDAEEFA)],
           ),
         ),
         child: Center(
@@ -62,7 +108,7 @@ class _LoginPageState extends State<LoginPage> {
                     color: Colors.black12,
                     blurRadius: 10,
                     offset: Offset(0, 4),
-                  )
+                  ),
                 ],
               ),
               child: Column(
@@ -71,10 +117,7 @@ class _LoginPageState extends State<LoginPage> {
                     padding: const EdgeInsets.all(18),
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
-                        colors: [
-                          Color(0xFF38D39F),
-                          Color(0xFF35A5DA),
-                        ],
+                        colors: [Color(0xFF38D39F), Color(0xFF35A5DA)],
                       ),
                       borderRadius: BorderRadius.circular(20),
                     ),
@@ -89,10 +132,7 @@ class _LoginPageState extends State<LoginPage> {
 
                   const Text(
                     "Sistem Monitoring",
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
                   ),
 
                   const SizedBox(height: 5),
@@ -104,6 +144,31 @@ class _LoginPageState extends State<LoginPage> {
 
                   const SizedBox(height: 25),
 
+                  // Email Field
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      "Email",
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  TextField(
+                    controller: emailC,
+                    decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.email_outlined),
+                      hintText: "Masukkan email",
+                      filled: true,
+                      fillColor: const Color(0xFFF2F3F7),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 15),
+
+                  // Username Field
                   const Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
@@ -113,7 +178,7 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                   const SizedBox(height: 5),
                   TextField(
-                    controller: userC,
+                    controller: nameC,
                     decoration: InputDecoration(
                       prefixIcon: const Icon(Icons.person_outline),
                       hintText: "Masukkan username",
@@ -128,6 +193,33 @@ class _LoginPageState extends State<LoginPage> {
 
                   const SizedBox(height: 15),
 
+                  // Date of Birth Field
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      "Tanggal Lahir",
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  TextField(
+                    controller: dobC,
+                    readOnly: true,
+                    onTap: _pickDate,
+                    decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.calendar_today_outlined),
+                      hintText: "Pilih tanggal lahir",
+                      filled: true,
+                      fillColor: const Color(0xFFF2F3F7),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 15),
+
+                  // Password Field
                   const Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
@@ -159,16 +251,13 @@ class _LoginPageState extends State<LoginPage> {
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(12),
                       gradient: const LinearGradient(
-                        colors: [
-                          Color(0xFF3DDB85),
-                          Color(0xFF0073E6),
-                        ],
+                        colors: [Color(0xFF3DDB85), Color(0xFF0073E6)],
                       ),
                     ),
                     child: TextButton(
-                      onPressed: login,
+                      onPressed: register,
                       child: const Text(
-                        "Login",
+                        "Register",
                         style: TextStyle(color: Colors.white, fontSize: 16),
                       ),
                     ),
@@ -179,10 +268,10 @@ class _LoginPageState extends State<LoginPage> {
                     onPressed: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const RegisterPage()),
+                        MaterialPageRoute(builder: (_) => const LoginPage()),
                       );
                     },
-                    child: const Text("Belum punya akun? Daftar"),
+                    child: const Text("Sudah punya akun? Login"),
                   ),
 
                   const SizedBox(height: 12),
@@ -190,7 +279,7 @@ class _LoginPageState extends State<LoginPage> {
                   const Text(
                     "© 2024 IoT Heart Monitoring System",
                     style: TextStyle(fontSize: 12, color: Colors.grey),
-                  )
+                  ),
                 ],
               ),
             ),
