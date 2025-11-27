@@ -3,8 +3,8 @@ import 'package:mobile_iot/pages/home_page.dart';
 import '../widgets/sidebar.dart';
 // import 'dashboard_page.dart';
 import 'data_user_page.dart';
-// import 'profile_page.dart';
-// import 'settings_page.dart';
+import 'profile_page.dart';
+import 'settings_page.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -47,12 +47,15 @@ class _HomeScreenState extends State<HomeScreen> {
       case 'data-user':
         return const DataUserPage();
       case 'profile':
-        return const Center(
-          child: Text('Profil', style: TextStyle(fontSize: 20)),
-        );
+        return const ProfilePage();
       case 'settings':
-        return const Center(
-          child: Text('Pengaturan', style: TextStyle(fontSize: 20)),
+        return SettingsPage(
+          isDarkMode: isDarkMode,
+          onThemeChanged: (value) {
+            setState(() {
+              isDarkMode = value;
+            });
+          },
         );
       default:
         return HomePage(isDarkMode: isDarkMode);
