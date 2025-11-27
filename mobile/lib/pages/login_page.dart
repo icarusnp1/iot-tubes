@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'home_page.dart';
+import 'home_screen.dart';
 import 'register_page.dart';
 
 class LoginPage extends StatefulWidget {
@@ -21,7 +21,7 @@ class _LoginPageState extends State<LoginPage> {
       // berpindah halaman
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const HomePage()),
+        MaterialPageRoute(builder: (_) => const HomeScreen()),
       );
     } else {
       // tampilkan pesan
