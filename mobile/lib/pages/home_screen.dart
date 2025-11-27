@@ -43,7 +43,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _getCurrentPage() {
     switch (currentPage) {
       case 'dashboard':
-        return const HomePage();
+        return HomePage(isDarkMode: isDarkMode);
       case 'data-user':
         return const DataUserPage();
       case 'profile':
@@ -55,7 +55,7 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Text('Pengaturan', style: TextStyle(fontSize: 20)),
         );
       default:
-        return const HomePage();
+        return HomePage(isDarkMode: isDarkMode);
     }
   }
 
