@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:mobile_iot/pages/home_page.dart';
 import '../widgets/sidebar.dart';
 // import 'dashboard_page.dart';
-// import 'data_user_page.dart';
+import 'data_user_page.dart';
 // import 'profile_page.dart';
 // import 'settings_page.dart';
 
@@ -43,13 +43,9 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _getCurrentPage() {
     switch (currentPage) {
       case 'dashboard':
-        return const Center(
-          child: Text('Dashboard', style: TextStyle(fontSize: 20)),
-        );
+        return const HomePage();
       case 'data-user':
-        return const Center(
-          child: Text('Data User', style: TextStyle(fontSize: 20)),
-        );
+        return const DataUserPage();
       case 'profile':
         return const Center(
           child: Text('Profil', style: TextStyle(fontSize: 20)),
