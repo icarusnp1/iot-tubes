@@ -5,6 +5,7 @@ class Sidebar extends StatelessWidget {
   final Function(String) setCurrentPage;
   final VoidCallback onLogout;
   final bool isDarkMode;
+  final bool isDbConnected;
 
   const Sidebar({
     super.key,
@@ -12,6 +13,7 @@ class Sidebar extends StatelessWidget {
     required this.setCurrentPage,
     required this.onLogout,
     required this.isDarkMode,
+    required this.isDbConnected,
   });
 
   @override
@@ -40,42 +42,92 @@ class Sidebar extends StatelessWidget {
             ),
             child: SafeArea(
               bottom: false,
-              child: Row(
+              child: Column(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF2ECC71), Color(0xFF0077B6)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(
-                      Icons.show_chart,
-                      color: Colors.white,
-                      size: 24,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Sistem Monitoring',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                            color: isDarkMode ? Colors.white : Colors.grey[900],
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF2ECC71), Color(0xFF0077B6)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
                           ),
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        Text(
-                          'Detak Jantung IoT',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey[500],
+                        child: const Icon(
+                          Icons.show_chart,
+                          color: Colors.white,
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Sistem Monitoring',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                                color: isDarkMode ? Colors.white : Colors.grey[900],
+                              ),
+                            ),
+                            Text(
+                              'Detak Jantung IoT',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[500],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  // Database Status Indicator
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isDbConnected
+                          ? const Color(0xFF2ECC71).withOpacity(0.1)
+                          : const Color(0xFFE53935).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: isDbConnected
+                            ? const Color(0xFF2ECC71).withOpacity(0.3)
+                            : const Color(0xFFE53935).withOpacity(0.3),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          isDbConnected ? Icons.check_circle : Icons.error,
+                          size: 16,
+                          color: isDbConnected
+                              ? const Color(0xFF2ECC71)
+                              : const Color(0xFFE53935),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            isDbConnected
+                                ? 'Database Terhubung'
+                                : 'Database Terputus',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: isDbConnected
+                                  ? const Color(0xFF2ECC71)
+                                  : const Color(0xFFE53935),
+                            ),
                           ),
                         ),
                       ],

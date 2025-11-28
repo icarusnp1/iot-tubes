@@ -5,11 +5,11 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
 import datetime
 from functools import wraps
+from sqlalchemy import func, text
 
 from ppg_processing import ppg_processor  # pastikan file ppg_processing.py ada
 from config import Config
 from models import db, User, UserHealth, SensorReading
-from sqlalchemy import func
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -388,6 +388,16 @@ def history_stats(current_user, user_id):
         'avg_spo2': float(avg_spo2) if avg_spo2 is not None else None
     })
 
+# simple unauthenticated DB health check
+@app.route('/api/db/check', methods=['GET'])
+def db_check():
+    try:
+        # lightweight query to confirm DB is reachable
+        result = db.session.execute(text('SELECT 1')).scalar()
+        return jsonify({'ok': True, 'db_response': int(result)}), 200
+    except Exception as e:
+        print(f"[DB CHECK] Error: {e}")
+        return jsonify({'ok': False, 'error': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, host='0.0.0.0')
