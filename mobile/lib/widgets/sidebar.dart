@@ -1,4 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../services/api_config.dart';
+import '../pages/login_page.dart';
 
 class Sidebar extends StatelessWidget {
   final String currentPage;
@@ -231,7 +236,89 @@ class Sidebar extends StatelessWidget {
             child: Material(
               color: Colors.transparent,
               child: InkWell(
-                onTap: onLogout,
+                onTap: () async {
+                  // Perform logout: call backend then clear local session
+                  try {
+                    final prefs = await SharedPreferences.getInstance();
+                    final token = prefs.getString('token');
+
+                    if (token == null) {
+                      // No token, just clear and navigate
+                      await prefs.remove('token');
+                      await prefs.remove('user_id');
+                      await prefs.remove('user_json');
+                      if (context.mounted) {
+                        Navigator.pushAndRemoveUntil(
+                          context,
+                          MaterialPageRoute(builder: (_) => const LoginPage()),
+                          (route) => false,
+                        );
+                      }
+                      return;
+                    }
+
+                    final uri = Uri.parse(ApiConfig.dbLogoutUrl);
+                    final resp = await http
+                        .post(
+                          uri,
+                          headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': 'Bearer $token',
+                          },
+                        )
+                        .timeout(ApiConfig.timeoutDuration);
+
+                    // clear local session regardless of backend response
+                    await prefs.remove('token');
+                    await prefs.remove('user_id');
+                    await prefs.remove('user_json');
+
+                    String message = 'Logout berhasil';
+                    if (resp.statusCode >= 200 && resp.statusCode < 300) {
+                      try {
+                        final data = json.decode(resp.body);
+                        if (data is Map && data['message'] != null) {
+                          message = data['message'];
+                        }
+                      } catch (_) {}
+                    } else {
+                      try {
+                        final data = json.decode(resp.body);
+                        if (data is Map && data['message'] != null) message = data['message'];
+                      } catch (_) {
+                        message = 'Logout: server returned ${resp.statusCode}';
+                      }
+                    }
+
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text(message)),
+                      );
+
+                      Navigator.pushAndRemoveUntil(
+                        context,
+                        MaterialPageRoute(builder: (_) => const LoginPage()),
+                        (route) => false,
+                      );
+                    }
+                  } catch (e) {
+                    // on error, still clear session and navigate to login
+                    final prefs = await SharedPreferences.getInstance();
+                    await prefs.remove('token');
+                    await prefs.remove('user_id');
+                    await prefs.remove('user_json');
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Logout error: $e')),
+                      );
+                      Navigator.pushAndRemoveUntil(
+                        context,
+                        MaterialPageRoute(builder: (_) => const LoginPage()),
+                        (route) => false,
+                      );
+                    }
+                  }
+                },
                 borderRadius: BorderRadius.circular(12),
                 child: Container(
                   padding: const EdgeInsets.symmetric(
