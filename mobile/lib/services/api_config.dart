@@ -13,11 +13,13 @@ class ApiConfig {
   static const String dbRegisterEndpoint = '/api/auth/register';
   static const String dbLoginEndpoint = '/api/auth/login';
   static const String dbLogoutEndpoint = '/api/auth/logout';
+  static const String dbHistoryEndpoint = '/api/history/2';
   
   // Full URLs
   static String get dbCheckUrl => '$baseUrl$dbCheckEndpoint';
   static String get dbRegisterUrl => '$baseUrl$dbRegisterEndpoint';
   static String get dbLogoutUrl => '$baseUrl$dbLogoutEndpoint';
+  static String get dbHistoryUrl => '$baseUrl$dbHistoryEndpoint';
   
   // Timeout duration
   static const Duration timeoutDuration = Duration(seconds: 10);

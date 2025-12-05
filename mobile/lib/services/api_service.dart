@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'api_config.dart';
 
 class ApiService {
@@ -80,14 +81,30 @@ class ApiService {
   }
 
   /// Generic GET request method
-  Future<Map<String, dynamic>> get(String endpoint) async {
+  /// If [auth] is true, the method will attach the saved JWT from
+  /// SharedPreferences as `Authorization: Bearer <token>` header.
+  Future<Map<String, dynamic>> get(String endpoint, {bool auth = false}) async {
     try {
+      final headers = <String, String>{'Content-Type': 'application/json'};
+
+      if (auth) {
+        final prefs = await SharedPreferences.getInstance();
+        final token = prefs.getString('token');
+        if (token != null && token.isNotEmpty) {
+          headers['Authorization'] = 'Bearer $token';
+        } else {
+          return {
+            'success': false,
+            'message': 'Token tidak ditemukan, silakan login',
+            'statusCode': 401,
+          };
+        }
+      }
+
       final response = await http
           .get(
             Uri.parse('${ApiConfig.baseUrl}$endpoint'),
-            headers: {
-              'Content-Type': 'application/json',
-            },
+            headers: headers,
           )
           .timeout(ApiConfig.timeoutDuration);
 
