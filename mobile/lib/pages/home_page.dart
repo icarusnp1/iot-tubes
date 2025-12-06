@@ -148,31 +148,23 @@ class _HomePageState extends State<HomePage> {
               title: 'Monitoring Aktivitas',
               isDarkMode: isDarkMode,
             ),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Expanded(
-                  child: MetricCard(
-                    title: 'Kecepatan',
-                    value: speed.toStringAsFixed(1),
-                    unit: 'km/jam',
-                    icon: Icons.speed,
-                    color: const Color(0xFF2ECC71),
-                    isDarkMode: isDarkMode,
-                  ),
-                ),
-                const SizedBox(width: 20),
-                Expanded(
-                  child: MetricCard(
-                    title: 'Langkah',
-                    value: steps.toString(),
-                    unit: 'steps',
-                    icon: Icons.directions_walk,
-                    color: const Color(0xFF9C27B0),
-                    isDarkMode: isDarkMode,
-                  ),
-                ),
-              ],
+            const SizedBox(height: 16),
+            MetricCard(
+              title: 'Kecepatan',
+              value: speed.toStringAsFixed(1),
+              unit: 'km/jam',
+              icon: Icons.speed,
+              color: const Color(0xFF2ECC71),
+              isDarkMode: isDarkMode,
+            ),
+            const SizedBox(height: 16),
+            MetricCard(
+              title: 'Langkah',
+              value: steps.toString(),
+              unit: 'steps',
+              icon: Icons.directions_walk,
+              color: const Color(0xFF9C27B0),
+              isDarkMode: isDarkMode,
             ),
             const SizedBox(height: 16),
             MetricCard(
