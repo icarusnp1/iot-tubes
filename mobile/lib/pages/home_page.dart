@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'dart:math';
+import 'package:fl_chart/fl_chart.dart';
 
 // Main Dashboard Page
 class HomePage extends StatefulWidget {
@@ -23,9 +24,16 @@ class _HomePageState extends State<HomePage> {
   String activity = 'walking';
   Timer? _timer;
 
+  // Chart data history (contoh mingguan, tapi akan diupdate oleh simulasi)
+  final int _maxHistory = 7;
+  List<double> bpmHistory = [72, 78, 75, 80, 76, 70, 74]; // contoh data Sen-Minggu
+  List<double> spo2History = [98, 97, 98, 96, 97, 99, 98];
+
   @override
   void initState() {
     super.initState();
+    // jika ingin memulai history dari nilai saat ini:
+    // bpmHistory = List.generate(7, (_) => bpm);
     _startSimulation();
   }
 
@@ -39,6 +47,12 @@ class _HomePageState extends State<HomePage> {
         speed = max(0, min(15, speed + (Random().nextDouble() * 2 - 1)));
         steps += Random().nextInt(10);
         calories += Random().nextInt(3);
+
+        // update histories (push newest)
+        bpmHistory.add(bpm);
+        spo2History.add(spo2);
+        if (bpmHistory.length > _maxHistory) bpmHistory.removeAt(0);
+        if (spo2History.length > _maxHistory) spo2History.removeAt(0);
       });
     });
   }
@@ -54,7 +68,7 @@ class _HomePageState extends State<HomePage> {
   @override
   Widget build(BuildContext context) {
     final isDarkMode = widget.isDarkMode;
-    
+
     return Scaffold(
       backgroundColor: isDarkMode ? const Color(0xFF1a202c) : Colors.grey[50],
       body: SingleChildScrollView(
@@ -180,6 +194,52 @@ class _HomePageState extends State<HomePage> {
               activity: activity,
               isDarkMode: isDarkMode,
             ),
+
+            const SizedBox(height: 32),
+
+            // --- Charts Section (mengikuti contoh React) ---
+            _buildSectionHeader(
+              icon: Icons.show_chart,
+              iconColor: const Color(0xFF0077B6),
+              title: 'Grafik & Tren Data',
+              isDarkMode: isDarkMode,
+            ),
+            const SizedBox(height: 12),
+
+            LayoutBuilder(builder: (context, constraints) {
+              final isWide = constraints.maxWidth > 700;
+              return Wrap(
+                spacing: 16,
+                runSpacing: 16,
+                children: [
+                  SizedBox(
+                    width: isWide ? (constraints.maxWidth / 2 - 16) : constraints.maxWidth,
+                    child: ChartCard(
+                      title: 'Grafik Detak Jantung',
+                      data: bpmHistory,
+                      currentValue: bpm,
+                      isDarkMode: isDarkMode,
+                      type: 'bpm',
+                    ),
+                  ),
+                  SizedBox(
+                    width: isWide ? (constraints.maxWidth / 2 - 16) : constraints.maxWidth,
+                    child: ChartCard(
+                      title: 'Grafik SpO₂',
+                      data: spo2History,
+                      currentValue: spo2,
+                      isDarkMode: isDarkMode,
+                      type: 'spo2',
+                    ),
+                  ),
+                ],
+              );
+            }),
+
+            const SizedBox(height: 24),
+
+            // Sync Panel
+            SyncPanel(isDarkMode: isDarkMode),
           ],
         ),
       ),
@@ -218,7 +278,270 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-// HealthStatusCard Widget
+// --------------------------- ChartCard Widget ---------------------------
+class ChartCard extends StatelessWidget {
+  final String title;
+  final List<double> data;
+  final double currentValue;
+  final bool isDarkMode;
+  final String type; // 'bpm' or 'spo2' (for color choices)
+
+  const ChartCard({
+    Key? key,
+    required this.title,
+    required this.data,
+    required this.currentValue,
+    required this.isDarkMode,
+    required this.type,
+  }) : super(key: key);
+
+  Color _primaryColor() {
+    if (type == 'bpm') return const Color(0xFFE53935);
+    if (type == 'spo2') return const Color(0xFF0077B6);
+    return const Color(0xFF2ECC71);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final primary = _primaryColor();
+    final bg = isDarkMode ? const Color(0xFF2d3748) : Colors.white;
+
+    // convert to FlSpot
+    final spots = <FlSpot>[];
+    for (int i = 0; i < data.length; i++) {
+      spots.add(FlSpot(i.toDouble(), data[i]));
+    }
+
+    // y bounds
+    double minY = data.isNotEmpty ? data.reduce(min) : 0;
+    double maxY = data.isNotEmpty ? data.reduce(max) : 1;
+    if (minY == maxY) {
+      maxY = minY + 1;
+      minY = minY - 1;
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: isDarkMode ? Colors.grey[700]! : Colors.grey[200]!),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // header
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(child: Text(title, style: TextStyle(fontSize: 16, color: isDarkMode ? Colors.white : Colors.grey[900], fontWeight: FontWeight.w600))),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(currentValue.toStringAsFixed(type == 'bpm' ? 0 : 0), style: TextStyle(fontSize: 18, color: primary, fontWeight: FontWeight.bold)),
+                  Text(type == 'bpm' ? 'BPM' : '%', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                ],
+              )
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // chart area
+          SizedBox(
+            height: 220,
+            child: data.isEmpty
+                ? Center(child: Text('Tidak ada data', style: TextStyle(color: isDarkMode ? Colors.white70 : Colors.black54)))
+                : Padding(
+                    padding: const EdgeInsets.only(right: 6.0, top: 8),
+                    child: LineChart(
+                      LineChartData(
+                        minY: type == 'bpm' ? 40 : (data.reduce(min) - 5),
+                        maxY: type == 'bpm' ? 120 : (data.reduce(max) + 5),
+                        gridData: FlGridData(
+                          show: true,
+                          drawVerticalLine: true,
+                          drawHorizontalLine: true,
+                          horizontalInterval: 10,
+                          verticalInterval: 1,
+                          getDrawingHorizontalLine: (value) {
+                            return FlLine(
+                              color: Colors.grey.withOpacity(0.12),
+                              strokeWidth: 1,
+                            );
+                          },
+                          getDrawingVerticalLine: (value) {
+                            return FlLine(
+                              color: Colors.grey.withOpacity(0.10),
+                              strokeWidth: 1,
+                              dashArray: [4, 4],
+                            );
+                          },
+                        ),
+                        titlesData: FlTitlesData(
+                          show: true,
+                          rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                          topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                          leftTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              reservedSize: 40,
+                              interval: 10,
+                              getTitlesWidget: (v, meta) {
+                                return leftTitleWidgets(v, meta);
+                              },
+                            ),
+                          ),
+                          bottomTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              interval: 1,
+                              getTitlesWidget: (v, meta) {
+                                return bottomTitleWidgets(v, meta, data.length);
+                              },
+                            ),
+                          ),
+                        ),
+                        borderData: FlBorderData(
+                          show: true,
+                          border: Border(
+                            left: BorderSide(color: Colors.grey.withOpacity(0.20)),
+                            bottom: BorderSide(color: Colors.grey.withOpacity(0.20)),
+                            top: BorderSide(color: Colors.transparent),
+                            right: BorderSide(color: Colors.transparent),
+                          ),
+                        ),
+                        lineBarsData: [
+                          LineChartBarData(
+                            spots: spots,
+                            isCurved: true,
+                            color: primary,
+                            barWidth: 2.2,
+                            dotData: FlDotData(show: true, getDotPainter: (spot, percent, barData, index) {
+                              return FlDotCirclePainter(
+                                radius: 3.6,
+                                color: Colors.white,
+                                strokeWidth: 2,
+                                strokeColor: primary,
+                              );
+                            }),
+                            belowBarData: BarAreaData(
+                              show: true,
+                              gradient: LinearGradient(
+                                colors: [primary.withOpacity(0.20), primary.withOpacity(0.02)],
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+          ),
+
+          const SizedBox(height: 10),
+
+          // small legend / info
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Terakhir ${data.length} sampel', style: TextStyle(fontSize: 12, color: isDarkMode ? Colors.white70 : Colors.grey)),
+              Text('Range: ${minY.toStringAsFixed(0)} - ${maxY.toStringAsFixed(0)}', style: TextStyle(fontSize: 12, color: isDarkMode ? Colors.white70 : Colors.grey)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // left axis widgets (Y axis)
+  Widget leftTitleWidgets(double value, TitleMeta meta) {
+    const style = TextStyle(
+      color: Colors.grey,
+      fontSize: 11,
+    );
+    if (value % 10 == 0) {
+      return Text('${value.toInt()}', style: style, textAlign: TextAlign.center);
+    } else {
+      return const SizedBox.shrink();
+    }
+  }
+
+  // bottom axis widgets (X axis) -> hari (Sen..Min)
+  Widget bottomTitleWidgets(double value, TitleMeta meta, int dataLength) {
+    const style = TextStyle(
+      color: Colors.grey,
+      fontSize: 11,
+    );
+
+    // prefer to show weekdays for last 7 points; otherwise show numeric index
+    final labels = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'];
+
+    // if dataLength >=7, show last 7 labels anchored to last 7 indices
+    if (dataLength >= 7) {
+      final startIndex = dataLength - 7;
+      final idx = value.toInt();
+      if (idx >= startIndex && idx < startIndex + 7) {
+        final label = labels[idx - startIndex];
+        return SideTitleWidget(space: 6, meta: meta, child: Text(label, style: style));
+      } else {
+        return const SizedBox.shrink();
+      }
+    } else {
+      // if less than 7 datapoints, map available points to first labels
+      final idx = value.toInt();
+      if (idx >= 0 && idx < dataLength && idx < labels.length) {
+        return SideTitleWidget(space: 6, meta: meta, child: Text(labels[idx], style: style));
+      } else {
+        return const SizedBox.shrink();
+      }
+    }
+  }
+}
+
+// --------------------------- SyncPanel (placeholder) ---------------------------
+class SyncPanel extends StatelessWidget {
+  final bool isDarkMode;
+
+  const SyncPanel({Key? key, required this.isDarkMode}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDarkMode ? const Color(0xFF2d3748) : Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: isDarkMode ? Colors.grey[700]! : Colors.grey[200]!),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.sync, size: 28),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Sinkronisasi Data', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: isDarkMode ? Colors.white : Colors.grey[900])),
+                const SizedBox(height: 4),
+                Text('Terakhir sinkron: beberapa menit yang lalu', style: TextStyle(fontSize: 12, color: isDarkMode ? Colors.white70 : Colors.grey)),
+              ],
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Sinkronisasi dimulai...')));
+            },
+            child: const Text('Sinkronkan'),
+          )
+        ],
+      ),
+    );
+  }
+}
+
+// --------------------------- HealthStatusCard, MetricCard, ActivityIndicator ---------------------------
+// (Salin ulang implementasi widget Anda yang sudah ada di file aslinya)
 enum HealthType { bpm, spo2, temperature, humidity }
 
 class HealthStatusCard extends StatelessWidget {
@@ -243,7 +566,7 @@ class HealthStatusCard extends StatelessWidget {
 
   Map<String, dynamic> _getStatus() {
     final numValue = value is String ? double.parse(value) : value.toDouble();
-    
+
     switch (type) {
       case HealthType.bpm:
         if (numValue < 60) {
@@ -357,7 +680,7 @@ class HealthStatusCard extends StatelessWidget {
 
   double _getScalePosition() {
     final numValue = value is String ? double.parse(value) : value.toDouble();
-    
+
     switch (type) {
       case HealthType.bpm:
         return min(100, max(0, ((numValue - 40) / (120 - 40)) * 100));
@@ -736,7 +1059,7 @@ class ActivityIndicator extends StatelessWidget {
             itemBuilder: (context, index) {
               final item = activities[index];
               final isActive = activity == item['id'];
-              
+
               return Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(

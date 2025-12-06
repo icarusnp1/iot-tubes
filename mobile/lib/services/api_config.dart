@@ -5,7 +5,7 @@ class ApiConfig {
   // static const String baseUrl = 'http://10.0.2.2:5000';
   
   // Alternative URLs (uncomment the one you need)
-  static const String baseUrl = 'http://10.161.169.128:5000'; // For physical device
+  static const String baseUrl = 'http://192.168.1.32:5000'; // For physical device
   // static const String baseUrl = 'http://127.0.0.1:5000'; // For iOS Simulator
   
   // API Endpoints
