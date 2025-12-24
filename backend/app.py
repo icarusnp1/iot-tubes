@@ -4,12 +4,25 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
 import datetime
+import uuid
 from functools import wraps
 
 from ppg_processing import ppg_processor  # pastikan file ppg_processing.py ada
 from config import Config
 from models import db, User, UserHealth, SensorReading
 from sqlalchemy import func
+
+from ppg_processing import ppg_processor  # sudah ada
+from motion_processing import motion_processor  # TAMBAHAN BARU
+
+import paho.mqtt.client as mqtt
+
+MQTT_BROKER   = "2ff07256b4f0416ca838d5d365529cfe.s1.eu.hivemq.cloud"
+MQTT_PORT     = 8883
+# MQTT_TOPIC    = "esp32_1/raw-data"
+# STATUS_TOPIC  = "esp32_1/status"
+MQTT_USERNAME = "Tubes_iot123"
+MQTT_PASSWORD = "Tubes_iot123"
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -189,11 +202,13 @@ def debug_ppg(current_user, user_id):
 
 def compute_bpm_spo2_steps_speed(user_id, ir_value, red_value, accel_x, accel_y, accel_z):
     """
-    Hitung BPM & SpO2.
-    - Pakai ppg_processor untuk algoritma PPG
-    - Kalau algoritma belum menghasilkan nilai (None), fallback ke nilai approx
-      supaya bpm & spo2 di DB tidak NULL.
+    Hitung BPM & SpO2 dari PPG + estimasi langkah & kecepatan dari akselerometer.
+
+    - BPM & SpO2: dari ppg_processor (kalau gagal -> fallback).
+    - Steps: total langkah kumulatif (per user) dari MotionProcessor.
+    - Speed: estimasi kecepatan (m/s) dari cadence × step_length.
     """
+    # -------- PPG (BPM & SpO2) --------
     bpm = None
     spo2 = None
 
@@ -204,18 +219,29 @@ def compute_bpm_spo2_steps_speed(user_id, ir_value, red_value, accel_x, accel_y,
             print(f"[PPG] Error add_sample user={user_id}: {e}")
             bpm, spo2 = None, None
 
-    # Fallback kalau algoritma belum punya hasil
+    # Fallback kalau algoritma PPG belum kasih nilai
     if bpm is None:
         bpm = 75 + (int(ir_value) % 5) if ir_value is not None else 75
 
     if spo2 is None:
         spo2 = 97.0
 
-    steps = 0
-    speed_mps = 0.0
+    # -------- Motion (steps & speed) --------
+    # Untuk sekarang, kita belum tarik height_cm per user (bisa dikembangkan nanti).
+    # Jadi height_cm=None -> pakai default step_length 0.7 m.
+    total_steps, speed_mps = motion_processor.add_sample(
+        user_id,
+        accel_x,
+        accel_y,
+        accel_z,
+        height_cm=None
+    )
 
-    print(f"[PPG] user={user_id} ir={ir_value} red={red_value} -> bpm={bpm}, spo2={spo2}")
-    return bpm, spo2, steps, speed_mps
+    print(f"[PPG+Motion] user={user_id} ir={ir_value} red={red_value} "
+          f"-> bpm={bpm}, spo2={spo2}, steps={total_steps}, speed={speed_mps:.2f} m/s")
+
+    return bpm, spo2, total_steps, speed_mps
+
 
 
 def determine_status(bpm, spo2):
@@ -231,7 +257,7 @@ def determine_status(bpm, spo2):
 @app.route('/api/ingest', methods=['POST'])
 def ingest():
     data = request.get_json()
-    user_id = data.get('user_id')
+    user_id = data.get('user_id') 
     if not user_id:
         return jsonify({'message': 'user_id wajib diisi'}), 400
 
@@ -329,7 +355,6 @@ def dashboard(current_user, user_id):
 
 
 # ============ API HISTORY & STATS ============
-
 @app.route('/api/history/<int:user_id>', methods=['GET'])
 @token_required
 def history(current_user, user_id):
@@ -364,7 +389,6 @@ def history(current_user, user_id):
         'data': items
     })
 
-
 @app.route('/api/history/<int:user_id>/stats', methods=['GET'])
 @token_required
 def history_stats(current_user, user_id):
@@ -388,6 +412,87 @@ def history_stats(current_user, user_id):
         'avg_spo2': float(avg_spo2) if avg_spo2 is not None else None
     })
 
+# ============ MQTT PUBLISHING ============
+
+def mqtt_publish(topic: str, payload: dict, qos: int = 1, retain: bool = False) -> None:
+    # 🔑 MUST be unique per client instance
+    client_id = f"flask-publisher-{uuid.uuid4()}"
+
+    client = mqtt.Client(
+        client_id=client_id,
+        protocol=mqtt.MQTTv311
+    )
+
+    if MQTT_USERNAME:
+        client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+
+    # TLS (HiveMQ Cloud requires TLS on 8883)
+    client.tls_set()
+    client.tls_insecure_set(False)
+
+    client.connect(MQTT_BROKER, MQTT_PORT, keepalive=30)
+
+    # Start loop
+    client.loop_start()
+
+    # json_string = json.dumps(payload)
+
+    # Publish JSON (IMPORTANT: serialize!)
+    client.publish(
+        topic,
+        payload,
+        qos=qos,
+        retain=retain
+    )
+
+    # Give broker time to receive packet
+    client.loop_stop()
+    client.disconnect()
+
+def is_safe_topic(topic: str) -> bool:
+    """
+    Prevent topic injection / wildcards / weird control chars.
+    Adjust to your own topic naming rules.
+    """
+    if not isinstance(topic, str):
+        return False
+    topic = topic.strip()
+    if not topic or len(topic) > 256:
+        return False
+    if "\x00" in topic:
+        return False
+    # Disallow MQTT wildcards to avoid publishing to broad topics unintentionally
+    if "+" in topic or "#" in topic:
+        return False
+    return True
+
+# ---------- The endpoint you asked for ----------
+@app.post("/api/publish-user")
+@token_required
+def publish_current_user(current_user):
+    """
+    Body: { "topic": "some/topic/name" }
+    esp32_1/session
+
+    Publishes: { "user_id": <current_user.id> } to that topic.
+    """
+    body = request.get_json(silent=True) or {}
+    topic = body.get("topic")
+    print("TEST TOPIC - ", topic, current_user.id)
+
+    if not is_safe_topic(topic):
+        return jsonify({"message": "Invalid topic"}), 400
+
+    payload = {
+        "user_id": current_user.id
+    }
+
+    try:
+        mqtt_publish(topic, current_user.id)
+    except Exception as e:
+        return jsonify({"message": "Failed to publish", "error": str(e)}), 502
+
+    return jsonify({"message": "Published", "topic": topic, "payload": payload}), 200
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, port=5001)

@@ -1,162 +1,111 @@
-# ppg_processing.py
-from collections import deque, defaultdict
-import time
-import math
-from statistics import mean, pstdev
+import numpy as np
+from collections import deque
+from scipy.signal import butter, filtfilt
 
 class PPGProcessor:
-    """
-    Processor sederhana untuk menghitung BPM & SpO2 dari raw IR/RED.
-    Menyimpan buffer per user.
+    def __init__(self, window_sec=10, fs=11):
+        self.fs = fs  # frekuensi sampling dari ESP32
+        self.window_size = window_sec * fs
 
-    Catatan:
-    - Asumsi data datang periodik (idealnya 25-50 Hz).
-    - Masih algoritma sederhana, cocok untuk demo / tugas, bukan alat medis.
-    """
-    def __init__(self, window_sec=8.0, min_bpm=40, max_bpm=180):
-        self.window_sec = window_sec
-        self.min_bpm = min_bpm
-        self.max_bpm = max_bpm
+        self.ir_buffer = {}
+        self.red_buffer = {}
 
-        # buffers[user_id] = deque of (timestamp, ir, red)
-        self.buffers = defaultdict(lambda: deque())
+        self.prev_bpm = {}
 
-    def add_sample(self, user_id, ir_value, red_value, timestamp=None):
-        """
-        Tambah 1 sampel PPG untuk user tertentu.
-        Return (bpm, spo2) -> bisa None kalau data belum cukup.
-        """
-        if timestamp is None:
-            timestamp = time.time()
+        # Butterworth bandpass filter untuk PPG (0.5–4 Hz)
+        self.b, self.a = butter(
+            N=3,
+            Wn=[0.5 / (fs/2), 4 / (fs/2)],
+            btype='band'
+        )
 
-        buf = self.buffers[user_id]
-        buf.append((timestamp, ir_value, red_value))
+    def add_sample(self, user_id, ir, red, accel_z=None):
+        """Input 1 sampel RAW, output (bpm, spo2) jika window cukup."""
 
-        # buang data yang lebih tua dari window_sec
-        cutoff = timestamp - self.window_sec
-        while buf and buf[0][0] < cutoff:
-            buf.popleft()
+        if user_id not in self.ir_buffer:
+            self.ir_buffer[user_id] = deque(maxlen=self.window_size)
+            self.red_buffer[user_id] = deque(maxlen=self.window_size)
+            self.prev_bpm[user_id] = None
 
-        # butuh minimal beberapa detik data
-        if len(buf) < 10:
+        # ---- 1. Motion artifact detection ----
+        if accel_z is not None and abs(accel_z - 1.0) > 0.15:
+            # Gerakan besar, skip hitung
+            return self.prev_bpm[user_id], None
+
+        self.ir_buffer[user_id].append(ir)
+        self.red_buffer[user_id].append(red)
+
+        # window belum cukup → return None
+        if len(self.ir_buffer[user_id]) < self.window_size:
             return None, None
 
-        return self._compute_from_buffer(list(buf))
+        ir_arr = np.array(self.ir_buffer[user_id], dtype=float)
 
-    def _compute_from_buffer(self, samples):
-        """
-        samples: list of (t, ir, red) dalam window.
-        """
-        times = [s[0] for s in samples]
-        ir_values = [float(s[1]) for s in samples]
-        red_values = [float(s[2]) for s in samples]
+        # ---- 2. Bandpass filter ----
+        ir_f = filtfilt(self.b, self.a, ir_arr)
 
-        # --- BPM dari IR ---
-        bpm = self._compute_bpm(times, ir_values)
+        # ---- 3. DC removal ----
+        ir_ac = ir_f - np.mean(ir_f)
 
-        # --- SpO2 dari IR & RED ---
-        spo2 = self._compute_spo2(ir_values, red_values)
-
-        return bpm, spo2
-
-    def _compute_bpm(self, times, ir_values):
-        if len(ir_values) < 5:
-            return None
-
-        dc_ir = mean(ir_values)
-        ac_ir = [v - dc_ir for v in ir_values]
-
-        # hitung std dev AC
-        std_ir = pstdev(ac_ir) if len(ac_ir) > 1 else 0.0
-        if std_ir == 0:
-            return None
-
-        # threshold untuk peak
-        threshold = min(dc_ir * 0.01, std_ir * 0.5)  # heuristik
-        # tapi karena kita kerja di AC (center di 0), pakai std saja
-        threshold = std_ir * 0.5
-
-        # cari local maxima
-        peaks = []
-        for i in range(1, len(ac_ir) - 1):
-            if ac_ir[i] > ac_ir[i-1] and ac_ir[i] > ac_ir[i+1] and ac_ir[i] > threshold:
-                peaks.append((times[i], ac_ir[i]))
+        # ---- 4. Peak detection ----
+        peaks = self.detect_peaks(ir_ac)
 
         if len(peaks) < 2:
+            return None, None
+
+        # Hitung BPM
+        peak_intervals = np.diff(peaks) / self.fs
+        avg_interval = np.mean(peak_intervals)
+
+        bpm = 60.0 / avg_interval
+
+        # ---- 5. BPM smoothing ----
+        if self.prev_bpm[user_id] is None:
+            self.prev_bpm[user_id] = bpm
+        else:
+            self.prev_bpm[user_id] = self.prev_bpm[user_id] * 0.7 + bpm * 0.3
+
+        bpm_final = round(self.prev_bpm[user_id], 1)
+
+        # ======================
+        # SPO2 (versi basic saja)
+        # ======================
+        spo2 = self.compute_spo2(np.array(self.ir_buffer[user_id]),
+                                 np.array(self.red_buffer[user_id]))
+
+        return bpm_final, spo2
+
+    # -----------------------------
+    # Peak Detection (PPG improved)
+    # -----------------------------
+    def detect_peaks(self, data):
+        peaks = []
+        threshold = np.mean(data) + 0.5 * np.std(data)
+
+        for i in range(1, len(data)-1):
+            if data[i] > data[i-1] and data[i] > data[i+1]:
+                if data[i] > threshold:
+                    peaks.append(i)
+
+        return peaks
+
+    # ---------------------
+    # SpO2 naive estimation
+    # ---------------------
+    def compute_spo2(self, ir, red):
+        # Basic ratio-of-ratios model
+        ac_ir = ir - np.mean(ir)
+        ac_red = red - np.mean(red)
+
+        if np.std(ac_ir) == 0:
             return None
 
-        # filter peaks berdasarkan jarak (min/max BPM)
-        min_interval = 60.0 / self.max_bpm  # detik
-        max_interval = 60.0 / self.min_bpm
+        R = (np.std(ac_red) / np.std(ac_ir))
 
-        filtered_peaks = []
-        last_peak_time = None
-        for t, amp in peaks:
-            if last_peak_time is None:
-                filtered_peaks.append((t, amp))
-                last_peak_time = t
-            else:
-                dt = t - last_peak_time
-                if min_interval <= dt <= max_interval:
-                    filtered_peaks.append((t, amp))
-                    last_peak_time = t
-                elif dt > max_interval:
-                    # kalau terlalu jauh, anggap ini peak baru dan reset
-                    filtered_peaks.append((t, amp))
-                    last_peak_time = t
-                # kalau terlalu dekat (< min_interval) di-skip
+        spo2 = 110 - 25 * R
+        spo2 = np.clip(spo2, 70, 100)
 
-        if len(filtered_peaks) < 2:
-            return None
+        return round(float(spo2), 1)
 
-        intervals = []
-        for i in range(1, len(filtered_peaks)):
-            dt = filtered_peaks[i][0] - filtered_peaks[i-1][0]
-            if min_interval <= dt <= max_interval:
-                intervals.append(dt)
-
-        if not intervals:
-            return None
-
-        mean_rr = sum(intervals) / len(intervals)  # detik
-        bpm = 60.0 / mean_rr
-
-        # filter lagi biar nggak terlalu liar
-        if bpm < self.min_bpm or bpm > self.max_bpm:
-            return None
-
-        return round(bpm, 2)
-
-    def _compute_spo2(self, ir_values, red_values):
-        if len(ir_values) < 5 or len(red_values) < 5:
-            return None
-
-        dc_ir = mean(ir_values)
-        dc_red = mean(red_values)
-        if dc_ir == 0 or dc_red == 0:
-            return None
-
-        ac_ir = [v - dc_ir for v in ir_values]
-        ac_red = [v - dc_red for v in red_values]
-
-        # gunakan std dev sebagai AC amplitude
-        ac_ir_std = pstdev(ac_ir) if len(ac_ir) > 1 else 0.0
-        ac_red_std = pstdev(ac_red) if len(ac_red) > 1 else 0.0
-
-        if ac_ir_std == 0 or ac_red_std == 0:
-            return None
-
-        # Ratio of Ratios
-        R = (ac_red_std / dc_red) / (ac_ir_std / dc_ir)
-
-        # Rumus empiris (approx) : SpO2 = 110 - 25*R
-        spo2 = 110.0 - 25.0 * R
-
-        # clamp ke range masuk akal
-        spo2 = max(70.0, min(100.0, spo2))
-
-        return round(spo2, 2)
-
-
-# buat instance global yang bisa dipakai di mana-mana
-ppg_processor = PPGProcessor(window_sec=8.0, min_bpm=40, max_bpm=180)
+# Global instance
+ppg_processor = PPGProcessor(window_sec=12, fs=11)
