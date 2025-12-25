@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
-import 'home_page.dart';
+import '../services/api_service.dart';
+import '../services/api_config.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'home_screen.dart';
+import 'register_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -9,24 +13,58 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  final TextEditingController userC = TextEditingController();
+  final TextEditingController emailC = TextEditingController();
   final TextEditingController passC = TextEditingController();
+  bool loading = false;
+  final ApiService apiService = ApiService();
 
-  void login() {
-    String user = userC.text;
-    String pass = passC.text;
+  Future<void> login() async {
+    String email = emailC.text.trim();
+    String password = passC.text;
 
-    if (user == "admin" && pass == "12345") {
-      // berpindah halaman
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const HomePage()),
-      );
-    } else {
-      // tampilkan pesan
+    if (email.isEmpty || password.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("Username atau password salah!"),
+          content: Text("Email dan password wajib diisi!"),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    setState(() { loading = true; });
+
+    final result = await apiService.post(ApiConfig.dbLoginEndpoint, {
+      'email': email,
+      'password': password,
+    });
+
+    setState(() { loading = false; });
+
+    if (result['success'] && result['data'] != null && result['data']['token'] != null) {
+      // Store token and user info in SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('token', result['data']['token']);
+      await prefs.setInt('user_id', result['data']['user_id']);
+      // Optionally store the whole response
+      await prefs.setString('user_json', result['data'].toString());
+
+      // Navigate to HomeScreen
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const HomeScreen()),
+      );
+    } else {
+      String msg = 'Login gagal';
+      if (result['data'] != null && result['data']['message'] != null) {
+        msg = result['data']['message'];
+      } else if (result['message'] != null) {
+        msg = result['message'];
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(msg),
           backgroundColor: Colors.red,
         ),
       );
@@ -106,16 +144,17 @@ class _LoginPageState extends State<LoginPage> {
                   const Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      "Username",
+                      "Email",
                       style: TextStyle(fontWeight: FontWeight.w600),
                     ),
                   ),
                   const SizedBox(height: 5),
                   TextField(
-                    controller: userC,
+                    controller: emailC,
+                    keyboardType: TextInputType.emailAddress,
                     decoration: InputDecoration(
-                      prefixIcon: const Icon(Icons.person_outline),
-                      hintText: "Masukkan username",
+                      prefixIcon: const Icon(Icons.email_outlined),
+                      hintText: "Masukkan email",
                       filled: true,
                       fillColor: const Color(0xFFF2F3F7),
                       border: OutlineInputBorder(
@@ -152,28 +191,45 @@ class _LoginPageState extends State<LoginPage> {
 
                   const SizedBox(height: 25),
 
-                  Container(
+                  SizedBox(
                     width: double.infinity,
                     height: 48,
-                    decoration: BoxDecoration(
+                    child: ElevatedButton(
+                      onPressed: loading ? null : login,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF38D39F),
+                        shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
-                      gradient: const LinearGradient(
-                        colors: [
-                          Color(0xFF3DDB85),
-                          Color(0xFF0073E6),
-                        ],
                       ),
                     ),
-                    child: TextButton(
-                      onPressed: login,
-                      child: const Text(
+                      child: loading
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            )
+                          : const Text(
                         "Login",
-                        style: TextStyle(color: Colors.white, fontSize: 16),
+                              style: TextStyle(fontSize: 16),
                       ),
                     ),
                   ),
 
-                  const SizedBox(height: 25),
+                  const SizedBox(height: 12),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const RegisterPage()),
+                      );
+                    },
+                    child: const Text("Belum punya akun? Daftar"),
+                  ),
+
+                  const SizedBox(height: 12),
 
                   const Text(
                     "© 2024 IoT Heart Monitoring System",

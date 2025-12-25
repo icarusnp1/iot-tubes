@@ -6,23 +6,14 @@ import datetime
 import uuid
 import json
 from functools import wraps
+from sqlalchemy import func, text
 
 import paho.mqtt.client as mqtt
 from sqlalchemy import func
 
 from config import Config
 from models import db, User, UserHealth, SensorReading
-from ppg_processing import ppg_processor
-from motion_algo import compute_steps_speed_from_batch, build_motion_payload
-
-# ================= MQTT CONFIG =================
-MQTT_BROKER   = "2ff07256b4f0416ca838d5d365529cfe.s1.eu.hivemq.cloud"
-MQTT_PORT     = 8883
-MQTT_USERNAME = "Tubes_iot123"
-MQTT_PASSWORD = "Tubes_iot123"
-
-STATUS_TOPIC  = "esp32_1/status"
-MOTION_TOPIC  = "esp32_1/motion"
+from sqlalchemy import func
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -438,6 +429,8 @@ def dashboard(current_user, user_id):
     return jsonify(response)
 
 
+# ============ API HISTORY & STATS ============
+
 @app.route('/api/history/<int:user_id>', methods=['GET'])
 @token_required
 def history(current_user, user_id):
@@ -499,37 +492,5 @@ def history_stats(current_user, user_id):
     })
 
 
-# ================= Publish user session (ESP32 expects integer plain) =================
-def is_safe_topic(topic: str) -> bool:
-    if not isinstance(topic, str):
-        return False
-    topic = topic.strip()
-    if not topic or len(topic) > 256:
-        return False
-    if "\x00" in topic:
-        return False
-    if "+" in topic or "#" in topic:
-        return False
-    return True
-
-
-@app.post("/api/publish-user")
-@token_required
-def publish_current_user(current_user):
-    body = request.get_json(silent=True) or {}
-    topic = body.get("topic")
-
-    if not is_safe_topic(topic):
-        return jsonify({"message": "Invalid topic"}), 400
-
-    # ESP32 SESSION handler expects plain integer string
-    try:
-        mqtt_publish(topic, current_user.id, qos=0, retain=False, is_json=False)
-    except Exception as e:
-        return jsonify({"message": "Failed to publish", "error": str(e)}), 502
-
-    return jsonify({"message": "Published", "topic": topic, "user_id": current_user.id}), 200
-
-
 if __name__ == '__main__':
-    app.run(debug=True, port=5001)
+    app.run(debug=True)
