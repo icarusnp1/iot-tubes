@@ -1,4 +1,3 @@
-# models.py
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 
@@ -27,6 +26,10 @@ class UserHealth(db.Model):
     height_cm   = db.Column(db.Numeric(5,2))
     weight_kg   = db.Column(db.Numeric(5,2))
     bmi         = db.Column(db.Numeric(5,2))
+
+    # NEW: hasil kalibrasi panjang langkah (meter)
+    step_length_m = db.Column(db.Numeric(5,3))
+
     created_at  = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at  = db.Column(db.DateTime, default=datetime.utcnow,
                             onupdate=datetime.utcnow)
