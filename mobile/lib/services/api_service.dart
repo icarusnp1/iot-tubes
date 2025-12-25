@@ -80,6 +80,18 @@ class ApiService {
     }
   }
 
+  /// Get current user ID from SharedPreferences
+  Future<int?> getCurrentUserId() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt('user_id');
+  }
+
+  /// Save user ID to SharedPreferences
+  Future<void> saveUserId(int userId) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('user_id', userId);
+  }
+
   /// Generic GET request method
   /// If [auth] is true, the method will attach the saved JWT from
   /// SharedPreferences as `Authorization: Bearer <token>` header.
@@ -121,6 +133,32 @@ class ApiService {
     }
   }
 
+  /// GET user health
+Future<Map<String, dynamic>> getUserHealth() async {
+  return await get('/api/user/health', auth: true);
+}
+
+  /// GET Dashboard
+Future<Map<String, dynamic>> getDashboard(int userId) async {
+  return await get('/api/dashboard/$userId', auth: true);
+}
+
+
+/// UPDATE user health
+Future<Map<String, dynamic>> updateUserHealth({
+  String? bloodType,
+  double? heightCm,
+  double? weightKg,
+}) async {
+  return await putAuth('/api/user/health', {
+    if (bloodType != null) 'blood_type': bloodType,
+    if (heightCm != null) 'height_cm': heightCm,
+    if (weightKg != null) 'weight_kg': weightKg,
+  });
+}
+
+
+
   /// Generic POST request method
   Future<Map<String, dynamic>> post(
     String endpoint,
@@ -149,4 +187,86 @@ class ApiService {
       };
     }
   }
+
+  Future<Map<String, dynamic>> postAuth(
+  String endpoint,
+  Map<String, dynamic> body,
+) async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('token');
+
+    if (token == null || token.isEmpty) {
+      return {
+        'success': false,
+        'message': 'Token tidak ditemukan, silakan login',
+        'statusCode': 401,
+      };
+    }
+
+    final response = await http
+        .post(
+          Uri.parse('${ApiConfig.baseUrl}$endpoint'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: json.encode(body),
+        )
+        .timeout(ApiConfig.timeoutDuration);
+
+    return {
+      'success': response.statusCode >= 200 && response.statusCode < 300,
+      'statusCode': response.statusCode,
+      'data': json.decode(response.body),
+    };
+  } catch (e) {
+    return {
+      'success': false,
+      'message': e.toString(),
+    };
+  }
+}
+
+
+Future<Map<String, dynamic>> putAuth(
+  String endpoint,
+  Map<String, dynamic> body,
+) async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('token');
+
+    if (token == null || token.isEmpty) {
+      return {
+        'success': false,
+        'message': 'Token tidak ditemukan, silakan login',
+        'statusCode': 401,
+      };
+    }
+
+    final response = await http
+        .put(
+          Uri.parse('${ApiConfig.baseUrl}$endpoint'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: json.encode(body),
+        )
+        .timeout(ApiConfig.timeoutDuration);
+
+    return {
+      'success': response.statusCode >= 200 && response.statusCode < 300,
+      'statusCode': response.statusCode,
+      'data': json.decode(response.body),
+    };
+  } catch (e) {
+    return {
+      'success': false,
+      'message': e.toString(),
+    };
+  }
+}
+
 }

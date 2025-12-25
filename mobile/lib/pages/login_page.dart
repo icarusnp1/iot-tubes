@@ -199,9 +199,9 @@ class _LoginPageState extends State<LoginPage> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF38D39F),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
+                      borderRadius: BorderRadius.circular(12),
                       ),
+                    ),
                       child: loading
                           ? const SizedBox(
                               height: 20,
@@ -212,9 +212,9 @@ class _LoginPageState extends State<LoginPage> {
                               ),
                             )
                           : const Text(
-                              "Login",
+                        "Login",
                               style: TextStyle(fontSize: 16),
-                            ),
+                      ),
                     ),
                   ),
 

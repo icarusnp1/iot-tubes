@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'dart:math';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../services/api_service.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -9,396 +10,216 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
-  bool isEditing = false;
-  
-  final Map<String, String> profile = {
-    'name': 'Ragis Rahmatulloh',
-    'email': 'Ragis.Rahmatulloh@example.com',
-    'phone': '+62 812-3456-7890',
-    'birthDate': '2005-05-15',
-    'address': 'Bandung, Indonesia',
-    'bloodType': 'O+',
-    'height': '175',
-    'weight': '70',
-  };
+  final ApiService api = ApiService();
+  final TextEditingController nameController = TextEditingController();
+  final TextEditingController emailController = TextEditingController();
+  final TextEditingController birthDateController = TextEditingController();
 
-  late TextEditingController nameController;
-  late TextEditingController emailController;
-  late TextEditingController phoneController;
-  late TextEditingController birthDateController;
-  late TextEditingController addressController;
-  late TextEditingController bloodTypeController;
-  late TextEditingController heightController;
-  late TextEditingController weightController;
+  bool isEditing = false;
+  bool isLoading = true;
+
+  double? bmi;
+
+  final TextEditingController bloodTypeController = TextEditingController();
+  final TextEditingController heightController = TextEditingController();
+  final TextEditingController weightController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    nameController = TextEditingController(text: profile['name']);
-    emailController = TextEditingController(text: profile['email']);
-    phoneController = TextEditingController(text: profile['phone']);
-    birthDateController = TextEditingController(text: profile['birthDate']);
-    addressController = TextEditingController(text: profile['address']);
-    bloodTypeController = TextEditingController(text: profile['bloodType']);
-    heightController = TextEditingController(text: profile['height']);
-    weightController = TextEditingController(text: profile['weight']);
+    _loadAllData();
   }
 
-  double calculateBMI() {
-    try {
-      final weight = double.parse(profile['weight'] ?? '0');
-      final height = double.parse(profile['height'] ?? '0') / 100;
-      return weight / pow(height, 2);
-    } catch (e) {
-      return 0;
+  Future<void> _loadAllData() async {
+    setState(() => isLoading = true);
+
+    final profileRes = await api.get('/api/user/profile', auth: true);
+    final healthRes = await api.get('/api/user/health', auth: true);
+
+    if (profileRes['success'] && healthRes['success']) {
+      final p = profileRes['data'];
+      final h = healthRes['data'];
+
+      setState(() {
+        nameController.text = p['name'] ?? '';
+        emailController.text = p['email'] ?? '';
+        birthDateController.text = p['date_of_birth'] ?? '';
+
+        bloodTypeController.text = h['blood_type'] ?? '';
+        heightController.text = h['height_cm']?.toString() ?? '';
+        weightController.text = h['weight_kg']?.toString() ?? '';
+        bmi = h['bmi']?.toDouble();
+
+        isLoading = false;
+      });
+    } else {
+      setState(() => isLoading = false);
+      _showSnack('Gagal memuat data profil');
     }
+  }
+
+  Future<void> _saveProfileAndHealth() async {
+    setState(() => isLoading = true);
+
+    // 1️⃣ Update USER PROFILE
+    final profileRes = await api.putAuth('/api/user/profile', {
+      'name': nameController.text,
+      'date_of_birth': birthDateController.text,
+    });
+
+    // 2️⃣ Update HEALTH
+    final healthRes = await api.putAuth('/api/user/health', {
+      'blood_type': bloodTypeController.text,
+      'height_cm': double.tryParse(heightController.text),
+      'weight_kg': double.tryParse(weightController.text),
+    });
+
+    setState(() => isLoading = false);
+
+    if (profileRes['success'] && healthRes['success']) {
+      await _loadAllData();
+      setState(() => isEditing = false);
+      _showSnack('Profil berhasil diperbarui', success: true);
+    } else {
+      _showSnack('Gagal menyimpan profil');
+    }
+  }
+
+  void _showSnack(String msg, {bool success = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: success ? Colors.green : Colors.red,
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    if (isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header with Edit Button
+          /// HEADER
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text(
-                'Profil Pengguna',
-                style: TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                ),
+                'Profil Kesehatan',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
               ),
-              Container(
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF2ECC71), Color(0xFF0077B6)],
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    setState(() {
-                      if (isEditing) {
-                        // Save changes
-                        profile['name'] = nameController.text;
-                        profile['email'] = emailController.text;
-                        profile['phone'] = phoneController.text;
-                        profile['birthDate'] = birthDateController.text;
-                        profile['address'] = addressController.text;
-                        profile['bloodType'] = bloodTypeController.text;
-                        profile['height'] = heightController.text;
-                        profile['weight'] = weightController.text;
-                        
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Profil berhasil diperbarui!'),
-                            backgroundColor: Color(0xFF2ECC71),
-                          ),
-                        );
-                      }
-                      isEditing = !isEditing;
-                    });
-                  },
-                  icon: Icon(
-                    isEditing ? Icons.save : Icons.edit,
-                    size: 18,
-                  ),
-                  label: Text(isEditing ? 'Simpan' : 'Edit Profil'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.transparent,
-                    foregroundColor: Colors.white,
-                    shadowColor: Colors.transparent,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
+              ElevatedButton.icon(
+                onPressed: () {
+                  if (isEditing) {
+                    _saveProfileAndHealth();
+                  } else {
+                    setState(() => isEditing = true);
+                  }
+                },
+                icon: Icon(isEditing ? Icons.save : Icons.edit),
+                label: Text(isEditing ? 'Simpan' : 'Edit'),
               ),
             ],
           ),
+
           const SizedBox(height: 24),
 
-          // Profile Header Card
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: isDarkMode ? const Color(0xFF2d3748) : Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Column(
+          /// USER INFO CARD
+          /// USER INFO CARD
+          _card(
+            isDark,
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Avatar
-                Container(
-                  height: 96,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: const Color(0xFF2ECC71),
-                      width: 4,
-                    ),
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF2ECC71), Color(0xFF0077B6)],
-                    ),
-                  ),
-                  child: const Center(
-                    child: Icon(
-                      Icons.person,
-                      size: 48,
-                      color: Colors.white,
-                    ),
-                  ),
+                const Text(
+                  'Informasi Pengguna',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 16),
 
-                // Name and Email
+                _input('Nama Lengkap', nameController, isEditing),
+                const SizedBox(height: 16),
+
+                _input(
+                  'Email',
+                  emailController,
+                  isEditing, //
+                ),
+                const SizedBox(height: 16),
+
+                _input(
+                  'Tanggal Lahir (YYYY-MM-DD)',
+                  birthDateController,
+                  isEditing,
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
+          /// HEALTH FORM
+          _card(
+            isDark,
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Informasi Kesehatan',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 16),
+                _input('Golongan Darah', bloodTypeController, isEditing),
+                const SizedBox(height: 16),
+                _input(
+                  'Tinggi Badan (cm)',
+                  heightController,
+                  isEditing,
+                  isNumber: true,
+                ),
+                const SizedBox(height: 16),
+                _input(
+                  'Berat Badan (kg)',
+                  weightController,
+                  isEditing,
+                  isNumber: true,
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
+          /// BMI CARD
+          _card(
+            isDark,
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Body Mass Index (BMI)',
+                  style: TextStyle(fontSize: 14, color: Colors.grey),
+                ),
+                const SizedBox(height: 8),
                 Text(
-                  profile['name']!,
-                  style: TextStyle(
-                    fontSize: 20,
+                  bmi != null ? bmi!.toStringAsFixed(1) : '-',
+                  style: const TextStyle(
+                    fontSize: 32,
                     fontWeight: FontWeight.bold,
-                    color: isDarkMode ? Colors.white : Colors.grey[900],
+                    color: Colors.blue,
                   ),
-                  textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  profile['email']!,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[500],
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 12),
-
-                // Status Badges
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  alignment: WrapAlignment.center,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF2ECC71).withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Text(
-                        'Administrator',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF2ECC71),
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF0077B6).withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Text(
-                        'Aktif',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF0077B6),
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // Personal Information Card
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: isDarkMode ? const Color(0xFF2d3748) : Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Informasi Pribadi',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: isDarkMode ? Colors.white : Colors.grey[900],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                _buildInputField(
-                  'Nama Lengkap',
-                  nameController,
-                  Icons.person_outline,
-                  isDarkMode,
-                ),
-                const SizedBox(height: 16),
-                _buildInputField(
-                  'Email',
-                  emailController,
-                  Icons.mail_outline,
-                  isDarkMode,
-                ),
-                const SizedBox(height: 16),
-                _buildInputField(
-                  'Nomor Telepon',
-                  phoneController,
-                  Icons.phone_outlined,
-                  isDarkMode,
-                ),
-                const SizedBox(height: 16),
-                _buildInputField(
-                  'Tanggal Lahir',
-                  birthDateController,
-                  Icons.calendar_today_outlined,
-                  isDarkMode,
-                  isDate: true,
-                ),
-                const SizedBox(height: 16),
-                _buildInputField(
-                  'Alamat',
-                  addressController,
-                  Icons.location_on_outlined,
-                  isDarkMode,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          // Health Information Card
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: isDarkMode ? const Color(0xFF2d3748) : Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Informasi Kesehatan',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: isDarkMode ? Colors.white : Colors.grey[900],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildInputField(
-                        'Golongan Darah',
-                        bloodTypeController,
-                        null,
-                        isDarkMode,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildInputField(
-                        'Tinggi Badan (cm)',
-                        heightController,
-                        null,
-                        isDarkMode,
-                        isNumber: true,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildInputField(
-                        'Berat Badan (kg)',
-                        weightController,
-                        null,
-                        isDarkMode,
-                        isNumber: true,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
-
-                // BMI Card
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0077B6).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Body Mass Index (BMI)',
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[500],
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        calculateBMI().toStringAsFixed(1),
-                        style: const TextStyle(
-                          fontSize: 32,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF0077B6),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Normal (18.5 - 24.9)',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey[500],
-                        ),
-                      ),
-                    ],
-                  ),
+                  _bmiStatus(bmi),
+                  style: const TextStyle(color: Colors.grey),
                 ),
               ],
             ),
@@ -408,96 +229,65 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  Widget _buildInputField(
+  Widget _input(
     String label,
     TextEditingController controller,
-    IconData? icon,
-    bool isDarkMode, {
-    bool isDate = false,
+    bool enabled, {
     bool isNumber = false,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 14,
-            color: Colors.grey[500],
-          ),
-        ),
+        Text(label, style: const TextStyle(color: Colors.grey)),
         const SizedBox(height: 8),
         TextField(
           controller: controller,
-          enabled: isEditing,
+          enabled: enabled,
           keyboardType: isNumber ? TextInputType.number : TextInputType.text,
-          readOnly: isDate && isEditing,
-          onTap: isDate && isEditing
-              ? () async {
-                  final DateTime? picked = await showDatePicker(
-                    context: context,
-                    initialDate: DateTime.tryParse(controller.text) ?? DateTime.now(),
-                    firstDate: DateTime(1900),
-                    lastDate: DateTime.now(),
-                  );
-                  if (picked != null) {
-                    controller.text = picked.toString().split(' ')[0];
-                  }
-                }
-              : null,
-          decoration: InputDecoration(
-            prefixIcon: icon != null
-                ? Icon(icon, size: 20, color: Colors.grey[400])
-                : null,
-            filled: true,
-            fillColor: isEditing
-                ? (isDarkMode ? Colors.grey[800] : Colors.grey[50])
-                : (isDarkMode ? Colors.grey[800] : Colors.grey[100]),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(
-                color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
-              ),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(
-                color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
-              ),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(
-                color: Color(0xFF2ECC71),
-                width: 2,
-              ),
-            ),
-            disabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(
-                color: isDarkMode ? Colors.grey[700]! : Colors.grey[300]!,
-              ),
-            ),
-            contentPadding: EdgeInsets.symmetric(
-              horizontal: icon != null ? 12 : 16,
-              vertical: 12,
-            ),
+          decoration: const InputDecoration(
+            border: OutlineInputBorder(),
+            isDense: true,
           ),
         ),
       ],
     );
   }
 
+  Widget _card(bool isDark, Widget child) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF2d3748) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+
+  String _bmiStatus(double? bmi) {
+    if (bmi == null) return '-';
+    if (bmi < 18.5) return 'Kurus';
+    if (bmi < 25) return 'Normal';
+    if (bmi < 30) return 'Overweight';
+    return 'Obesitas';
+  }
+
   @override
   void dispose() {
-    nameController.dispose();
-    emailController.dispose();
-    phoneController.dispose();
-    birthDateController.dispose();
-    addressController.dispose();
     bloodTypeController.dispose();
     heightController.dispose();
     weightController.dispose();
+    nameController.dispose();
+    emailController.dispose();
+    birthDateController.dispose();
+
     super.dispose();
   }
 }
