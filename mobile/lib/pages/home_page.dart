@@ -12,7 +12,7 @@ class HomePage extends StatefulWidget {
 
   @override
   State<HomePage> createState() => _HomePageState();
-  }
+}
 
 class _HomePageState extends State<HomePage> {
   double bpm = 0;
@@ -42,7 +42,7 @@ class _HomePageState extends State<HomePage> {
     try {
       // Ambil user_id dari SharedPreferences
       final userId = await ApiService().getCurrentUserId();
-      
+
       if (userId == null) {
         setState(() {
           error = 'User ID tidak ditemukan. Silakan login kembali.';
@@ -61,19 +61,23 @@ class _HomePageState extends State<HomePage> {
           if (data['latest'] != null) {
             bpm = (data['latest']['bpm'] ?? 0).toDouble();
             spo2 = (data['latest']['spo2'] ?? 0).toDouble();
-            speed = (data['latest']['speed_mps'] ?? 0).toDouble() * 3.6; // m/s → km/jam
+            speed =
+                (data['latest']['speed_mps'] ?? 0).toDouble() *
+                3.6; // m/s → km/jam
             steps = data['latest']['steps'] ?? 0;
           }
 
           // Ambil data grafik
           if (data['graph'] != null) {
-            bpmHistory = (data['graph']['bpm'] as List?)
+            bpmHistory =
+                (data['graph']['bpm'] as List?)
                     ?.where((e) => e != null)
                     .map<double>((e) => (e as num).toDouble())
                     .toList() ??
                 [];
 
-            spo2History = (data['graph']['spo2'] as List?)
+            spo2History =
+                (data['graph']['spo2'] as List?)
                     ?.where((e) => e != null)
                     .map<double>((e) => (e as num).toDouble())
                     .toList() ??
@@ -112,9 +116,7 @@ class _HomePageState extends State<HomePage> {
     if (isLoading) {
       return Scaffold(
         backgroundColor: isDarkMode ? const Color(0xFF1a202c) : Colors.grey[50],
-        body: const Center(
-          child: CircularProgressIndicator(),
-        ),
+        body: const Center(child: CircularProgressIndicator()),
       );
     }
 
@@ -126,11 +128,7 @@ class _HomePageState extends State<HomePage> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                Icons.error_outline,
-                size: 64,
-                color: Colors.red[300],
-              ),
+              Icon(Icons.error_outline, size: 64, color: Colors.red[300]),
               const SizedBox(height: 16),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 32),
@@ -185,10 +183,7 @@ class _HomePageState extends State<HomePage> {
                   ),
                   child: const Text(
                     '⚠️ Peringatan: Data kesehatan menunjukkan nilai abnormal. Segera konsultasi dengan dokter.',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Color(0xFFE53935),
-                    ),
+                    style: TextStyle(fontSize: 14, color: Color(0xFFE53935)),
                   ),
                 ),
 
@@ -258,43 +253,46 @@ class _HomePageState extends State<HomePage> {
               ),
               const SizedBox(height: 12),
 
-              LayoutBuilder(builder: (context, constraints) {
-                final isWide = constraints.maxWidth > 700;
-                return Wrap(
-                  spacing: 16,
-                  runSpacing: 16,
-                  children: [
-                    SizedBox(
-                      width: isWide ? (constraints.maxWidth / 2 - 16) : constraints.maxWidth,
-                      child: ChartCard(
-                        title: 'Grafik Detak Jantung',
-                        data: bpmHistory,
-                        currentValue: bpm,
-                        isDarkMode: isDarkMode,
-                        type: 'bpm',
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final isWide = constraints.maxWidth > 700;
+                  return Wrap(
+                    spacing: 16,
+                    runSpacing: 16,
+                    children: [
+                      SizedBox(
+                        width: isWide
+                            ? (constraints.maxWidth / 2 - 16)
+                            : constraints.maxWidth,
+                        child: ChartCard(
+                          title: 'Grafik Detak Jantung',
+                          data: bpmHistory,
+                          currentValue: bpm,
+                          isDarkMode: isDarkMode,
+                          type: 'bpm',
+                        ),
                       ),
-                    ),
-                    SizedBox(
-                      width: isWide ? (constraints.maxWidth / 2 - 16) : constraints.maxWidth,
-                      child: ChartCard(
-                        title: 'Grafik SpO₂',
-                        data: spo2History,
-                        currentValue: spo2,
-                        isDarkMode: isDarkMode,
-                        type: 'spo2',
+                      SizedBox(
+                        width: isWide
+                            ? (constraints.maxWidth / 2 - 16)
+                            : constraints.maxWidth,
+                        child: ChartCard(
+                          title: 'Grafik SpO₂',
+                          data: spo2History,
+                          currentValue: spo2,
+                          isDarkMode: isDarkMode,
+                          type: 'spo2',
+                        ),
                       ),
-                    ),
-                  ],
-                );
-              }),
+                    ],
+                  );
+                },
+              ),
 
               const SizedBox(height: 24),
 
               // Sync Panel
-              SyncPanel(
-                isDarkMode: isDarkMode,
-                onRefresh: fetchDashboard,
-              ),
+              SyncPanel(isDarkMode: isDarkMode, onRefresh: fetchDashboard),
             ],
           ),
         ),
@@ -333,8 +331,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 }
-
-
 
 // --------------------------- ChartCard Widget ---------------------------
 class ChartCard extends StatelessWidget {
@@ -383,7 +379,9 @@ class ChartCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: isDarkMode ? Colors.grey[700]! : Colors.grey[200]!),
+        border: Border.all(
+          color: isDarkMode ? Colors.grey[700]! : Colors.grey[200]!,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -392,14 +390,33 @@ class ChartCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Expanded(child: Text(title, style: TextStyle(fontSize: 16, color: isDarkMode ? Colors.white : Colors.grey[900], fontWeight: FontWeight.w600))),
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: isDarkMode ? Colors.white : Colors.grey[900],
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  Text(currentValue.toStringAsFixed(type == 'bpm' ? 0 : 0), style: TextStyle(fontSize: 18, color: primary, fontWeight: FontWeight.bold)),
-                  Text(type == 'bpm' ? 'BPM' : '%', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  Text(
+                    currentValue.toStringAsFixed(type == 'bpm' ? 0 : 0),
+                    style: TextStyle(
+                      fontSize: 18,
+                      color: primary,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    type == 'bpm' ? 'BPM' : '%',
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
                 ],
-              )
+              ),
             ],
           ),
           const SizedBox(height: 12),
@@ -408,7 +425,14 @@ class ChartCard extends StatelessWidget {
           SizedBox(
             height: 220,
             child: data.isEmpty
-                ? Center(child: Text('Tidak ada data', style: TextStyle(color: isDarkMode ? Colors.white70 : Colors.black54)))
+                ? Center(
+                    child: Text(
+                      'Tidak ada data',
+                      style: TextStyle(
+                        color: isDarkMode ? Colors.white70 : Colors.black54,
+                      ),
+                    ),
+                  )
                 : Padding(
                     padding: const EdgeInsets.only(right: 6.0, top: 8),
                     child: LineChart(
@@ -437,8 +461,12 @@ class ChartCard extends StatelessWidget {
                         ),
                         titlesData: FlTitlesData(
                           show: true,
-                          rightTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                          topTitles: AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                          rightTitles: AxisTitles(
+                            sideTitles: SideTitles(showTitles: false),
+                          ),
+                          topTitles: AxisTitles(
+                            sideTitles: SideTitles(showTitles: false),
+                          ),
                           leftTitles: AxisTitles(
                             sideTitles: SideTitles(
                               showTitles: true,
@@ -462,8 +490,12 @@ class ChartCard extends StatelessWidget {
                         borderData: FlBorderData(
                           show: true,
                           border: Border(
-                            left: BorderSide(color: Colors.grey.withOpacity(0.20)),
-                            bottom: BorderSide(color: Colors.grey.withOpacity(0.20)),
+                            left: BorderSide(
+                              color: Colors.grey.withOpacity(0.20),
+                            ),
+                            bottom: BorderSide(
+                              color: Colors.grey.withOpacity(0.20),
+                            ),
                             top: BorderSide(color: Colors.transparent),
                             right: BorderSide(color: Colors.transparent),
                           ),
@@ -474,18 +506,24 @@ class ChartCard extends StatelessWidget {
                             isCurved: true,
                             color: primary,
                             barWidth: 2.2,
-                            dotData: FlDotData(show: true, getDotPainter: (spot, percent, barData, index) {
-                              return FlDotCirclePainter(
-                                radius: 3.6,
-                                color: Colors.white,
-                                strokeWidth: 2,
-                                strokeColor: primary,
-                              );
-                            }),
+                            dotData: FlDotData(
+                              show: true,
+                              getDotPainter: (spot, percent, barData, index) {
+                                return FlDotCirclePainter(
+                                  radius: 3.6,
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                  strokeColor: primary,
+                                );
+                              },
+                            ),
                             belowBarData: BarAreaData(
                               show: true,
                               gradient: LinearGradient(
-                                colors: [primary.withOpacity(0.20), primary.withOpacity(0.02)],
+                                colors: [
+                                  primary.withOpacity(0.20),
+                                  primary.withOpacity(0.02),
+                                ],
                                 begin: Alignment.topCenter,
                                 end: Alignment.bottomCenter,
                               ),
@@ -503,8 +541,20 @@ class ChartCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Terakhir ${data.length} sampel', style: TextStyle(fontSize: 12, color: isDarkMode ? Colors.white70 : Colors.grey)),
-              Text('Range: ${minY.toStringAsFixed(0)} - ${maxY.toStringAsFixed(0)}', style: TextStyle(fontSize: 12, color: isDarkMode ? Colors.white70 : Colors.grey)),
+              Text(
+                'Terakhir ${data.length} sampel',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isDarkMode ? Colors.white70 : Colors.grey,
+                ),
+              ),
+              Text(
+                'Range: ${minY.toStringAsFixed(0)} - ${maxY.toStringAsFixed(0)}',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: isDarkMode ? Colors.white70 : Colors.grey,
+                ),
+              ),
             ],
           ),
         ],
@@ -514,12 +564,13 @@ class ChartCard extends StatelessWidget {
 
   // left axis widgets (Y axis)
   Widget leftTitleWidgets(double value, TitleMeta meta) {
-    const style = TextStyle(
-      color: Colors.grey,
-      fontSize: 11,
-    );
+    const style = TextStyle(color: Colors.grey, fontSize: 11);
     if (value % 10 == 0) {
-      return Text('${value.toInt()}', style: style, textAlign: TextAlign.center);
+      return Text(
+        '${value.toInt()}',
+        style: style,
+        textAlign: TextAlign.center,
+      );
     } else {
       return const SizedBox.shrink();
     }
@@ -527,10 +578,7 @@ class ChartCard extends StatelessWidget {
 
   // bottom axis widgets (X axis) -> hari (Sen..Min)
   Widget bottomTitleWidgets(double value, TitleMeta meta, int dataLength) {
-    const style = TextStyle(
-      color: Colors.grey,
-      fontSize: 11,
-    );
+    const style = TextStyle(color: Colors.grey, fontSize: 11);
 
     // prefer to show weekdays for last 7 points; otherwise show numeric index
     final labels = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'];
@@ -541,7 +589,11 @@ class ChartCard extends StatelessWidget {
       final idx = value.toInt();
       if (idx >= startIndex && idx < startIndex + 7) {
         final label = labels[idx - startIndex];
-        return SideTitleWidget(space: 6, meta: meta, child: Text(label, style: style));
+        return SideTitleWidget(
+          space: 6,
+          meta: meta,
+          child: Text(label, style: style),
+        );
       } else {
         return const SizedBox.shrink();
       }
@@ -549,7 +601,11 @@ class ChartCard extends StatelessWidget {
       // if less than 7 datapoints, map available points to first labels
       final idx = value.toInt();
       if (idx >= 0 && idx < dataLength && idx < labels.length) {
-        return SideTitleWidget(space: 6, meta: meta, child: Text(labels[idx], style: style));
+        return SideTitleWidget(
+          space: 6,
+          meta: meta,
+          child: Text(labels[idx], style: style),
+        );
       } else {
         return const SizedBox.shrink();
       }
@@ -562,11 +618,8 @@ class SyncPanel extends StatelessWidget {
   final bool isDarkMode;
   final VoidCallback? onRefresh;
 
-  const SyncPanel({
-    Key? key,
-    required this.isDarkMode,
-    this.onRefresh,
-  }) : super(key: key);
+  const SyncPanel({Key? key, required this.isDarkMode, this.onRefresh})
+    : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -575,7 +628,9 @@ class SyncPanel extends StatelessWidget {
       decoration: BoxDecoration(
         color: isDarkMode ? const Color(0xFF2d3748) : Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: isDarkMode ? Colors.grey[700]! : Colors.grey[200]!),
+        border: Border.all(
+          color: isDarkMode ? Colors.grey[700]! : Colors.grey[200]!,
+        ),
       ),
       child: Row(
         children: [
@@ -605,16 +660,39 @@ class SyncPanel extends StatelessWidget {
             ),
           ),
           ElevatedButton(
-            onPressed: () {
-              if (onRefresh != null) {
-                onRefresh!();
+            onPressed: () async {
+              final api = ApiService();
+
+              // Example topic (adjust to your MQTT structure)
+              const String topic = '';
+
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Menyinkronkan data...')),
+              );
+
+              final result = await api.publishCurrentUser(topic: topic);
+
+              if (result['success'] == true) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Menyinkronkan data...')),
+                  const SnackBar(content: Text('Data berhasil disinkronkan')),
+                );
+
+                // Optional: refresh UI
+                if (onRefresh != null) {
+                  onRefresh!();
+                }
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      result['message'] ?? 'Gagal menyinkronkan data',
+                    ),
+                  ),
                 );
               }
             },
             child: const Text('Sinkronkan'),
-          )
+          ),
         ],
       ),
     );
@@ -682,7 +760,8 @@ class HealthStatusCard extends StatelessWidget {
             'label': 'Hipoksemia Berat',
             'color': const Color(0xFFE53935),
             'icon': Icons.error_outline,
-            'description': 'Kadar oksigen sangat rendah - segera hubungi dokter',
+            'description':
+                'Kadar oksigen sangat rendah - segera hubungi dokter',
             'range': 'Normal: 95-100%',
           };
         }
@@ -870,10 +949,7 @@ class HealthStatusCard extends StatelessWidget {
             ),
             child: Text(
               status['label'],
-              style: TextStyle(
-                fontSize: 12,
-                color: status['color'],
-              ),
+              style: TextStyle(fontSize: 12, color: status['color']),
             ),
           ),
           const SizedBox(height: 16),
@@ -913,10 +989,14 @@ class HealthStatusCard extends StatelessWidget {
           // Scale Labels
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: scaleLabels.map((label) => Text(
-              label,
-              style: const TextStyle(fontSize: 12, color: Colors.grey),
-            )).toList(),
+            children: scaleLabels
+                .map(
+                  (label) => Text(
+                    label,
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                )
+                .toList(),
           ),
           const SizedBox(height: 16),
 
@@ -924,9 +1004,9 @@ class HealthStatusCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: isDarkMode 
-                ? Colors.grey[800]?.withOpacity(0.5) 
-                : Colors.grey[50],
+              color: isDarkMode
+                  ? Colors.grey[800]?.withOpacity(0.5)
+                  : Colors.grey[50],
               borderRadius: BorderRadius.circular(8),
             ),
             child: Column(
@@ -935,18 +1015,16 @@ class HealthStatusCard extends StatelessWidget {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(
-                      status['icon'],
-                      size: 16,
-                      color: status['color'],
-                    ),
+                    Icon(status['icon'], size: 16, color: status['color']),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         status['description'],
                         style: TextStyle(
                           fontSize: 12,
-                          color: isDarkMode ? Colors.grey[300] : Colors.grey[700],
+                          color: isDarkMode
+                              ? Colors.grey[300]
+                              : Colors.grey[700],
                         ),
                       ),
                     ),
@@ -957,10 +1035,7 @@ class HealthStatusCard extends StatelessWidget {
                   padding: const EdgeInsets.only(left: 24),
                   child: Text(
                     status['range'],
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey,
-                    ),
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
                   ),
                 ),
               ],
@@ -975,22 +1050,42 @@ class HealthStatusCard extends StatelessWidget {
     switch (type) {
       case HealthType.bpm:
         return const LinearGradient(
-          colors: [Color(0xFFFF9800), Color(0xFF2ECC71), Color(0xFF2ECC71), Color(0xFFE53935)],
+          colors: [
+            Color(0xFFFF9800),
+            Color(0xFF2ECC71),
+            Color(0xFF2ECC71),
+            Color(0xFFE53935),
+          ],
           stops: [0.0, 0.3, 0.7, 1.0],
         );
       case HealthType.spo2:
         return const LinearGradient(
-          colors: [Color(0xFFE53935), Color(0xFFFF9800), Color(0xFF2ECC71), Color(0xFF2ECC71)],
+          colors: [
+            Color(0xFFE53935),
+            Color(0xFFFF9800),
+            Color(0xFF2ECC71),
+            Color(0xFF2ECC71),
+          ],
           stops: [0.0, 0.4, 0.7, 1.0],
         );
       case HealthType.temperature:
         return const LinearGradient(
-          colors: [Color(0xFF2196F3), Color(0xFF2ECC71), Color(0xFF2ECC71), Color(0xFFE53935)],
+          colors: [
+            Color(0xFF2196F3),
+            Color(0xFF2ECC71),
+            Color(0xFF2ECC71),
+            Color(0xFFE53935),
+          ],
           stops: [0.0, 0.3, 0.6, 1.0],
         );
       case HealthType.humidity:
         return const LinearGradient(
-          colors: [Color(0xFFFF9800), Color(0xFF2ECC71), Color(0xFF2ECC71), Color(0xFF2196F3)],
+          colors: [
+            Color(0xFFFF9800),
+            Color(0xFF2ECC71),
+            Color(0xFF2ECC71),
+            Color(0xFF2196F3),
+          ],
           stops: [0.0, 0.3, 0.7, 1.0],
         );
     }
@@ -1039,10 +1134,7 @@ class MetricCard extends StatelessWidget {
                   children: [
                     Text(
                       title,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey,
-                      ),
+                      style: const TextStyle(fontSize: 14, color: Colors.grey),
                     ),
                     const SizedBox(height: 8),
                     Row(

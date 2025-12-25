@@ -13,7 +13,18 @@ from sqlalchemy import func
 
 from config import Config
 from models import db, User, UserHealth, SensorReading
-from sqlalchemy import func
+from ppg_processing import ppg_processor
+from motion_algo import compute_steps_speed_from_batch, build_motion_payload
+
+# ================= MQTT CONFIG =================
+MQTT_BROKER   = "2ff07256b4f0416ca838d5d365529cfe.s1.eu.hivemq.cloud"
+MQTT_PORT     = 8883
+MQTT_USERNAME = "Tubes_iot123"
+MQTT_PASSWORD = "Tubes_iot123"
+
+STATUS_TOPIC  = "esp32_1/status"
+MOTION_TOPIC  = "esp32_1/motion"
+SESSION_TOPIC = "esp32_1/session";
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -52,40 +63,76 @@ def token_required(f):
 
 
 # ================= MQTT PUBLISH HELPERS =================
-def mqtt_publish(topic: str, payload, qos: int = 1, retain: bool = False, *, is_json: bool = True) -> None:
+def mqtt_publish(topic: str, payload, qos: int = 1, retain: bool = False, *, is_json: bool = False) -> None:
     """
-    Publish ke MQTT. Bisa JSON (dict) atau plain string/int.
+    Publish ke MQTT dengan debug lengkap.
+    """
 
-    - is_json=True:
-        payload dict/list -> json.dumps
-        payload str -> publish as-is (anggap sudah JSON)
-    - is_json=False:
-        payload -> str(payload) (untuk SESSION_TOPIC yang butuh integer plain)
-    """
     client_id = f"flask-publisher-{uuid.uuid4()}"
-    c = mqtt.Client(client_id=client_id, protocol=mqtt.MQTTv311)
+    print("\n===== MQTT PUBLISH DEBUG START =====")
+    print(f"[DEBUG] Client ID      : {client_id}")
+    print(f"[DEBUG] Broker        : {MQTT_BROKER}:{MQTT_PORT}")
+    print(f"[DEBUG] Topic         : {topic}")
+    print(f"[DEBUG] QoS           : {qos}")
+    print(f"[DEBUG] Retain        : {retain}")
+    print(f"[DEBUG] is_json       : {is_json}")
+    print(f"[DEBUG] Raw Payload   : {payload} (type={type(payload)})")
 
-    if MQTT_USERNAME:
-        c.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+    try:
+        c = mqtt.Client(client_id=client_id, protocol=mqtt.MQTTv311)
 
-    c.tls_set()
-    c.tls_insecure_set(app.config.get("MQTT_TLS_INSECURE", True))
-
-    c.connect(MQTT_BROKER, MQTT_PORT, keepalive=30)
-    c.loop_start()
-
-    if is_json:
-        if isinstance(payload, (dict, list)):
-            msg = json.dumps(payload, separators=(",", ":"))
+        # Auth
+        if MQTT_USERNAME:
+            print("[DEBUG] Using MQTT authentication")
+            c.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
         else:
-            msg = payload  # assume already JSON string
-    else:
-        msg = str(payload)
+            print("[DEBUG] No MQTT authentication")
 
-    c.publish(topic, msg, qos=qos, retain=retain)
+        # TLS
+        print("[DEBUG] Enabling TLS")
+        c.tls_set()
+        tls_insecure = app.config.get("MQTT_TLS_INSECURE", True)
+        c.tls_insecure_set(tls_insecure)
+        print(f"[DEBUG] TLS insecure  : {tls_insecure}")
 
-    c.loop_stop()
-    c.disconnect()
+        # Connect
+        print("[DEBUG] Connecting to broker...")
+        c.connect(MQTT_BROKER, MQTT_PORT, keepalive=60)
+        c.loop_start()
+
+        # Payload handling
+        if is_json:
+            if isinstance(payload, (dict, list)):
+                msg = json.dumps(payload, separators=(",", ":"))
+                print("[DEBUG] Payload encoded as JSON")
+            else:
+                msg = payload
+                print("[DEBUG] Payload assumed already JSON string")
+        else:
+            msg = str(payload)
+            print("[DEBUG] Payload converted to string")
+
+        print(f"[DEBUG] Final Payload : {msg}")
+
+        # Publish
+        result = c.publish(topic, msg, qos=qos, retain=retain)
+        result.wait_for_publish()
+
+        print(f"[DEBUG] Publish result: rc={result.rc}")
+        if result.rc == mqtt.MQTT_ERR_SUCCESS:
+            print("[DEBUG] Publish SUCCESS")
+        else:
+            print("[ERROR] Publish FAILED")
+
+        c.loop_stop()
+        c.disconnect()
+
+    except Exception as e:
+        print("[EXCEPTION] MQTT publish error!")
+        print(type(e).__name__, ":", e)
+
+    finally:
+        print("===== MQTT PUBLISH DEBUG END =====\n")
 
 
 def determine_status(bpm, spo2):
@@ -428,8 +475,36 @@ def dashboard(current_user, user_id):
     }
     return jsonify(response)
 
+# ============ API USER PROFILE (FROM USERS TABLE) ============
 
-# ============ API HISTORY & STATS ============
+@app.route('/api/user/profile', methods=['GET', 'PUT'])
+@token_required
+def user_profile(current_user):
+    # GET → ambil dari tabel users
+    if request.method == 'GET':
+        return jsonify({
+            'id': current_user.id,
+            'name': current_user.name,
+            'email': current_user.email,
+            'date_of_birth': current_user.date_of_birth.isoformat()
+            if current_user.date_of_birth else None
+        })
+
+    # PUT → update tabel users
+    if request.method == 'PUT':
+        data = request.get_json()
+
+        if 'name' in data:
+            current_user.name = data['name']
+
+        if 'date_of_birth' in data and data['date_of_birth']:
+            current_user.date_of_birth = datetime.datetime.strptime(
+                data['date_of_birth'], '%Y-%m-%d'
+            ).date()
+
+        db.session.commit()
+        return jsonify({'message': 'Profil user berhasil diperbarui'})
+
 
 @app.route('/api/history/<int:user_id>', methods=['GET'])
 @token_required
@@ -491,6 +566,48 @@ def history_stats(current_user, user_id):
         'avg_spo2': float(avg_spo2) if avg_spo2 is not None else None
     })
 
+# simple unauthenticated DB health check
+@app.route('/api/db/check', methods=['GET'])
+def db_check():
+    try:
+        # lightweight query to confirm DB is reachable
+        result = db.session.execute(text('SELECT 1')).scalar()
+        return jsonify({'ok': True, 'db_response': int(result)}), 200
+    except Exception as e:
+        print(f"[DB CHECK] Error: {e}")
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+# ================= Publish user session (ESP32 expects integer plain) =================
+def is_safe_topic(topic: str) -> bool:
+    if not isinstance(topic, str):
+        return False
+    topic = topic.strip()
+    if not topic or len(topic) > 256:
+        return False
+    if "\x00" in topic:
+        return False
+    if "+" in topic or "#" in topic:
+        return False
+    return True
+
+
+@app.post("/api/publish-user")
+@token_required
+def publish_current_user(current_user):
+    body = request.get_json(silent=True) or {}
+    topic = body.get("topic")
+
+    if not is_safe_topic(topic):
+        return jsonify({"message": "Invalid topic"}), 400
+
+    # ESP32 SESSION handler expects plain integer string
+    try:
+        mqtt_publish(topic, current_user.id, qos=0, retain=False, is_json=False)
+    except Exception as e:
+        return jsonify({"message": "Failed to publish", "error": str(e)}), 502
+
+    return jsonify({"message": "Published", "topic": topic, "user_id": current_user.id}), 200
+
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, host='0.0.0.0')

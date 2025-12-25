@@ -17,9 +17,7 @@ class ApiService {
       final response = await http
           .get(
             Uri.parse(ApiConfig.dbCheckUrl),
-            headers: {
-              'Content-Type': 'application/json',
-            },
+            headers: {'Content-Type': 'application/json'},
           )
           .timeout(
             ApiConfig.timeoutDuration,
@@ -58,25 +56,17 @@ class ApiService {
       // No internet or server not reachable
       return {
         'success': false,
-        'message': 'Tidak dapat terhubung ke server. Pastikan server berjalan dan IP address benar.',
+        'message':
+            'Tidak dapat terhubung ke server. Pastikan server berjalan dan IP address benar.',
       };
     } on http.ClientException {
-      return {
-        'success': false,
-        'message': 'Kesalahan koneksi HTTP',
-      };
+      return {'success': false, 'message': 'Kesalahan koneksi HTTP'};
     } on FormatException {
-      return {
-        'success': false,
-        'message': 'Format response tidak valid',
-      };
+      return {'success': false, 'message': 'Format response tidak valid'};
     } catch (e) {
       // Other errors
       print('Error: ${e.toString()}');
-      return {
-        'success': false,
-        'message': 'Error: ${e.toString()}',
-      };
+      return {'success': false, 'message': 'Error: ${e.toString()}'};
     }
   }
 
@@ -114,10 +104,7 @@ class ApiService {
       }
 
       final response = await http
-          .get(
-            Uri.parse('${ApiConfig.baseUrl}$endpoint'),
-            headers: headers,
-          )
+          .get(Uri.parse('${ApiConfig.baseUrl}$endpoint'), headers: headers)
           .timeout(ApiConfig.timeoutDuration);
 
       return {
@@ -126,38 +113,32 @@ class ApiService {
         'data': json.decode(response.body),
       };
     } catch (e) {
-      return {
-        'success': false,
-        'message': e.toString(),
-      };
+      return {'success': false, 'message': e.toString()};
     }
   }
 
   /// GET user health
-Future<Map<String, dynamic>> getUserHealth() async {
-  return await get('/api/user/health', auth: true);
-}
+  Future<Map<String, dynamic>> getUserHealth() async {
+    return await get('/api/user/health', auth: true);
+  }
 
   /// GET Dashboard
-Future<Map<String, dynamic>> getDashboard(int userId) async {
-  return await get('/api/dashboard/$userId', auth: true);
-}
+  Future<Map<String, dynamic>> getDashboard(int userId) async {
+    return await get('/api/dashboard/$userId', auth: true);
+  }
 
-
-/// UPDATE user health
-Future<Map<String, dynamic>> updateUserHealth({
-  String? bloodType,
-  double? heightCm,
-  double? weightKg,
-}) async {
-  return await putAuth('/api/user/health', {
-    if (bloodType != null) 'blood_type': bloodType,
-    if (heightCm != null) 'height_cm': heightCm,
-    if (weightKg != null) 'weight_kg': weightKg,
-  });
-}
-
-
+  /// UPDATE user health
+  Future<Map<String, dynamic>> updateUserHealth({
+    String? bloodType,
+    double? heightCm,
+    double? weightKg,
+  }) async {
+    return await putAuth('/api/user/health', {
+      if (bloodType != null) 'blood_type': bloodType,
+      if (heightCm != null) 'height_cm': heightCm,
+      if (weightKg != null) 'weight_kg': weightKg,
+    });
+  }
 
   /// Generic POST request method
   Future<Map<String, dynamic>> post(
@@ -168,8 +149,43 @@ Future<Map<String, dynamic>> updateUserHealth({
       final response = await http
           .post(
             Uri.parse('${ApiConfig.baseUrl}$endpoint'),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode(body),
+          )
+          .timeout(ApiConfig.timeoutDuration);
+
+      return {
+        'success': response.statusCode >= 200 && response.statusCode < 300,
+        'statusCode': response.statusCode,
+        'data': json.decode(response.body),
+      };
+    } catch (e) {
+      return {'success': false, 'message': e.toString()};
+    }
+  }
+
+  Future<Map<String, dynamic>> postAuth(
+    String endpoint,
+    Map<String, dynamic> body,
+  ) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+
+      if (token == null || token.isEmpty) {
+        return {
+          'success': false,
+          'message': 'Token tidak ditemukan, silakan login',
+          'statusCode': 401,
+        };
+      }
+
+      final response = await http
+          .post(
+            Uri.parse('${ApiConfig.baseUrl}$endpoint'),
             headers: {
               'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
             },
             body: json.encode(body),
           )
@@ -181,92 +197,52 @@ Future<Map<String, dynamic>> updateUserHealth({
         'data': json.decode(response.body),
       };
     } catch (e) {
-      return {
-        'success': false,
-        'message': e.toString(),
-      };
+      return {'success': false, 'message': e.toString()};
     }
   }
 
-  Future<Map<String, dynamic>> postAuth(
-  String endpoint,
-  Map<String, dynamic> body,
-) async {
-  try {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('token');
+  Future<Map<String, dynamic>> putAuth(
+    String endpoint,
+    Map<String, dynamic> body,
+  ) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
 
-    if (token == null || token.isEmpty) {
+      if (token == null || token.isEmpty) {
+        return {
+          'success': false,
+          'message': 'Token tidak ditemukan, silakan login',
+          'statusCode': 401,
+        };
+      }
+
+      final response = await http
+          .put(
+            Uri.parse('${ApiConfig.baseUrl}$endpoint'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: json.encode(body),
+          )
+          .timeout(ApiConfig.timeoutDuration);
+
       return {
-        'success': false,
-        'message': 'Token tidak ditemukan, silakan login',
-        'statusCode': 401,
+        'success': response.statusCode >= 200 && response.statusCode < 300,
+        'statusCode': response.statusCode,
+        'data': json.decode(response.body),
       };
+    } catch (e) {
+      return {'success': false, 'message': e.toString()};
     }
-
-    final response = await http
-        .post(
-          Uri.parse('${ApiConfig.baseUrl}$endpoint'),
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer $token',
-          },
-          body: json.encode(body),
-        )
-        .timeout(ApiConfig.timeoutDuration);
-
-    return {
-      'success': response.statusCode >= 200 && response.statusCode < 300,
-      'statusCode': response.statusCode,
-      'data': json.decode(response.body),
-    };
-  } catch (e) {
-    return {
-      'success': false,
-      'message': e.toString(),
-    };
   }
-}
 
-
-Future<Map<String, dynamic>> putAuth(
-  String endpoint,
-  Map<String, dynamic> body,
-) async {
-  try {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('token');
-
-    if (token == null || token.isEmpty) {
-      return {
-        'success': false,
-        'message': 'Token tidak ditemukan, silakan login',
-        'statusCode': 401,
-      };
-    }
-
-    final response = await http
-        .put(
-          Uri.parse('${ApiConfig.baseUrl}$endpoint'),
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer $token',
-          },
-          body: json.encode(body),
-        )
-        .timeout(ApiConfig.timeoutDuration);
-
-    return {
-      'success': response.statusCode >= 200 && response.statusCode < 300,
-      'statusCode': response.statusCode,
-      'data': json.decode(response.body),
-    };
-  } catch (e) {
-    return {
-      'success': false,
-      'message': e.toString(),
-    };
+  /// Publish current user to MQTT topic
+  Future<Map<String, dynamic>> publishCurrentUser({
+    required String topic,
+  }) async {
+    return await postAuth('/api/publish-user', {'topic': topic});
   }
-}
-
+  
 }

@@ -12,7 +12,7 @@ MQTT_PASSWORD = "Tubes_iot123"
 RAW_TOPIC     = "esp32_1/raw-data"
 
 # Arahkan ke app.py
-APP_BASE_URL  = "http://127.0.0.1:5001"
+APP_BASE_URL  = "http://127.0.0.1:5000"
 INGEST_URL    = f"{APP_BASE_URL}/api/ingest-esp32-batch"
 
 # Samakan dengan Config.INGEST_API_KEY

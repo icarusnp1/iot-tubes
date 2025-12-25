@@ -315,6 +315,8 @@ void loop() {
     // Debug Serial
     Serial.print("SAMPLE ");
     Serial.print(sampleCount);
+    Serial.print(" | USER ID: ");
+    Serial.print(USER_ID);
     Serial.print(" | IR: ");
     Serial.print(irValue);
     Serial.print(" RED: ");
