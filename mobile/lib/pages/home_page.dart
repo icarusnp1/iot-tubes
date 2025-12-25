@@ -69,19 +69,28 @@ class _HomePageState extends State<HomePage> {
 
           // Ambil data grafik
           if (data['graph'] != null) {
-            bpmHistory =
+            final bpmList =
                 (data['graph']['bpm'] as List?)
                     ?.where((e) => e != null)
                     .map<double>((e) => (e as num).toDouble())
                     .toList() ??
                 [];
 
-            spo2History =
+            final spo2List =
                 (data['graph']['spo2'] as List?)
                     ?.where((e) => e != null)
                     .map<double>((e) => (e as num).toDouble())
                     .toList() ??
                 [];
+
+            // Ambil 7 data terakhir
+            bpmHistory = bpmList.length > 30
+                ? bpmList.sublist(bpmList.length - 30)
+                : bpmList;
+
+            spo2History = spo2List.length > 30
+                ? spo2List.sublist(spo2List.length - 30)
+                : spo2List;
           }
 
           isLoading = false;
@@ -369,10 +378,25 @@ class ChartCard extends StatelessWidget {
     // y bounds
     double minY = data.isNotEmpty ? data.reduce(min) : 0;
     double maxY = data.isNotEmpty ? data.reduce(max) : 1;
+
+    // Add padding
+    final padding = type == 'bpm' ? 10.0 : 5.0;
+    minY -= padding;
+    maxY += padding;
+
+    // Prevent flat line
     if (minY == maxY) {
-      maxY = minY + 1;
-      minY = minY - 1;
+      minY -= 1;
+      maxY += 1;
     }
+
+    double roundDown(double v, double step) => (v / step).floor() * step;
+
+    double roundUp(double v, double step) => (v / step).ceil() * step;
+
+    final step = type == 'bpm' ? 10.0 : 5.0;
+    minY = roundDown(minY, step);
+    maxY = roundUp(maxY, step);
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -437,8 +461,8 @@ class ChartCard extends StatelessWidget {
                     padding: const EdgeInsets.only(right: 6.0, top: 8),
                     child: LineChart(
                       LineChartData(
-                        minY: type == 'bpm' ? 40 : (data.reduce(min) - 5),
-                        maxY: type == 'bpm' ? 120 : (data.reduce(max) + 5),
+                        minY: minY,
+                        maxY: maxY,
                         gridData: FlGridData(
                           show: true,
                           drawVerticalLine: true,
@@ -581,13 +605,18 @@ class ChartCard extends StatelessWidget {
     const style = TextStyle(color: Colors.grey, fontSize: 11);
 
     // prefer to show weekdays for last 7 points; otherwise show numeric index
-    final labels = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'];
+    final labels = List.generate(30, (index) {
+      if (index % 10 == 0) {
+        return index.toString(); // 0, 10, 20, 30, 40, 50
+      }
+      return ''; // hide other labels
+    });
 
     // if dataLength >=7, show last 7 labels anchored to last 7 indices
-    if (dataLength >= 7) {
-      final startIndex = dataLength - 7;
+    if (dataLength >= 30) {
+      final startIndex = dataLength - 30;
       final idx = value.toInt();
-      if (idx >= startIndex && idx < startIndex + 7) {
+      if (idx >= startIndex && idx < startIndex + 30) {
         final label = labels[idx - startIndex];
         return SideTitleWidget(
           space: 6,
@@ -664,7 +693,7 @@ class SyncPanel extends StatelessWidget {
               final api = ApiService();
 
               // Example topic (adjust to your MQTT structure)
-              const String topic = '';
+              const String topic = 'esp32_1/session';
 
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Menyinkronkan data...')),
