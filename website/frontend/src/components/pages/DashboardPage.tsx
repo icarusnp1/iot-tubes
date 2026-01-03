@@ -39,7 +39,7 @@ export function DashboardPage({ isDarkMode, userId }: DashboardPageProps) {
   const fetchLiveData = async () => {
   try {
     const res = await fetch(
-      `http://sem5.test/iot-tubes/website/backend/get_latest_sensor.php?user_id=${userId}`
+      `http://localhost/sem5.test/iot-tubes/website/backend/get_latest_sensor.php?user_id=${userId}`
     );
 
     const result = await res.json();

@@ -32,7 +32,7 @@ function clearUserFromMQTT() {
     $mqtt->connect($settings, true);
 
     // ⛔ user logout → kirim 0
-    $mqtt->publish("esp32_1/config/user", "0", 1, true);
+    $mqtt->publish("esp32_1/session", "0", 1, true);
 
     $mqtt->disconnect();
 }

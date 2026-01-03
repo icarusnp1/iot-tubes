@@ -11,7 +11,7 @@ use PhpMqtt\Client\MqttClient;
 use PhpMqtt\Client\ConnectionSettings;
 
 function publishUserToMQTT($user_id) {
-    $server   = "5b0d305e3c22421da515a8f6b950c054.s1.eu.hivemq.cloud"; // ganti sesuai HiveMQ
+    $server   = "2ff07256b4f0416ca838d5d365529cfe.s1.eu.hivemq.cloud"; // ganti sesuai HiveMQ
     $port     = 8883;
     $clientId = "php-login-backend";
     $username = "Tubes_iot123";
@@ -27,7 +27,7 @@ function publishUserToMQTT($user_id) {
     $mqtt->connect($settings, true);
 
     $payload = $user_id;
-    $mqtt->publish("esp32_1/config/user", $payload, 1, true); // QoS=1, retained=true
+    $mqtt->publish("esp32_1/session", $payload, 1, true); // QoS=1, retained=true
 
     $mqtt->disconnect();
 }

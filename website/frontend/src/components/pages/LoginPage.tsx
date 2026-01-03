@@ -22,7 +22,7 @@ export function LoginPage({ onLogin, isDarkMode, setIsDarkMode, onGoRegister }: 
   setIsLoading(true);
 
   try {
-    const res = await fetch("http://sem5.test/iot-tubes/website/backend/login.php", {
+    const res = await fetch("http://localhost/sem5.test/iot-tubes/website/backend/login.php", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, password })

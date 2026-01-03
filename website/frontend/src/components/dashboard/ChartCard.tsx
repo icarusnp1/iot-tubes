@@ -20,7 +20,7 @@ export function ChartCard({ title, type, isDarkMode, currentValue, userId }: Cha
   const fetchChart = async () => {
     try {
       const res = await fetch(
-        `http://sem5.test/iot-tubes/website/backend/get_chart_data.php?user_id=${userId}&type=${type}&range=${timeRange}`
+        `http://localhost/sem5.test/iot-tubes/website/backend/get_chart_data.php?user_id=${userId}&type=${type}&range=${timeRange}`
       );
 
       const result = await res.json();

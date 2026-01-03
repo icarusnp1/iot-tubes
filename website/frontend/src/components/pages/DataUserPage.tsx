@@ -40,7 +40,7 @@ export function DataUserPage({ isDarkMode, userId }: DataUserPageProps) {
     const fetchData = async () => {
       try {
         const res = await fetch(
-          `http://sem5.test/iot-tubes/website/backend/get_sensor_readings.php?user_id=${userId}`
+          `http://localhost/sem5.test/iot-tubes/website/backend/get_sensor_readings.php?user_id=${userId}`
         );
 
         const data = await res.json();

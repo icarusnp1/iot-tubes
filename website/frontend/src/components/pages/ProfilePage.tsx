@@ -36,7 +36,7 @@ export function ProfilePage({ isDarkMode, userId }: ProfilePageProps) {
   useEffect(() => {
     const fetchProfile = async () => {
       try {
-        const res = await fetch(`http://sem5.test/iot-tubes/website/backend/get_profile.php?user_id=${userId}`);
+        const res = await fetch(`http://localhost/sem5.test/iot-tubes/website/backend/get_profile.php?user_id=${userId}`);
         const data = await res.json();
         if (!res.ok) throw new Error(data.message || "Gagal mengambil data profile");
 
@@ -58,7 +58,7 @@ export function ProfilePage({ isDarkMode, userId }: ProfilePageProps) {
 
   const handleSave = async () => {
     try {
-      const res = await fetch(`http://sem5.test/iot-tubes/website/backend/update_profile.php`, {
+      const res = await fetch(`http://localhost/sem5.test/iot-tubes/website/backend/update_profile.php`, {
         method: 'POST',
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ user_id: userId, ...profile })

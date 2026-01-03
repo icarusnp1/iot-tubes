@@ -26,7 +26,7 @@ const handleRegister = async (e: React.FormEvent) => {
   console.log({ username, email, password, birth }); // cek state sebelum fetch
 
   try {
-    const res = await fetch("http://sem5.test/iot-tubes/website/backend/register.php", {
+    const res = await fetch("http://localhost/sem5.test/iot-tubes/website/backend/register.php", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, email, password, birth })
