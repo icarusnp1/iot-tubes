@@ -1,26 +1,42 @@
 # app.py
 from flask import Flask, request, jsonify
-from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
 import datetime
+import uuid
+import json
 from functools import wraps
 from sqlalchemy import func, text
 
-from ppg_processing import ppg_processor  # pastikan file ppg_processing.py ada
+import paho.mqtt.client as mqtt
+from sqlalchemy import func
+
 from config import Config
 from models import db, User, UserHealth, SensorReading
+from ppg_processing import ppg_processor
+from motion_algo import compute_steps_speed_from_batch, build_motion_payload
+
+# ================= MQTT CONFIG =================
+MQTT_BROKER   = "2ff07256b4f0416ca838d5d365529cfe.s1.eu.hivemq.cloud"
+MQTT_PORT     = 8883
+MQTT_USERNAME = "Tubes_iot123"
+MQTT_PASSWORD = "Tubes_iot123"
+
+STATUS_TOPIC  = "esp32_1/status"
+MOTION_TOPIC  = "esp32_1/motion"
+SESSION_TOPIC = "esp32_1/session";
 
 app = Flask(__name__)
 app.config.from_object(Config)
 
 db.init_app(app)
+
+# Development only:
 with app.app_context():
-    db.create_all()  # hanya untuk development pertama kali
+    db.create_all()  # :contentReference[oaicite:5]{index=5}
 
 
-# ============ Helper Auth (JWT) ============
-
+# ================= AUTH =================
 def token_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -46,11 +62,127 @@ def token_required(f):
     return decorated
 
 
-# ============ AUTH ROUTES ============
+# ================= MQTT PUBLISH HELPERS =================
+def mqtt_publish(topic: str, payload, qos: int = 1, retain: bool = False, *, is_json: bool = False) -> None:
+    """
+    Publish ke MQTT dengan debug lengkap.
+    """
 
+    client_id = f"flask-publisher-{uuid.uuid4()}"
+    print("\n===== MQTT PUBLISH DEBUG START =====")
+    print(f"[DEBUG] Client ID      : {client_id}")
+    print(f"[DEBUG] Broker        : {MQTT_BROKER}:{MQTT_PORT}")
+    print(f"[DEBUG] Topic         : {topic}")
+    print(f"[DEBUG] QoS           : {qos}")
+    print(f"[DEBUG] Retain        : {retain}")
+    print(f"[DEBUG] is_json       : {is_json}")
+    print(f"[DEBUG] Raw Payload   : {payload} (type={type(payload)})")
+
+    try:
+        c = mqtt.Client(client_id=client_id, protocol=mqtt.MQTTv311)
+
+        # Auth
+        if MQTT_USERNAME:
+            print("[DEBUG] Using MQTT authentication")
+            c.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+        else:
+            print("[DEBUG] No MQTT authentication")
+
+        # TLS
+        print("[DEBUG] Enabling TLS")
+        c.tls_set()
+        tls_insecure = app.config.get("MQTT_TLS_INSECURE", True)
+        c.tls_insecure_set(tls_insecure)
+        print(f"[DEBUG] TLS insecure  : {tls_insecure}")
+
+        # Connect
+        print("[DEBUG] Connecting to broker...")
+        c.connect(MQTT_BROKER, MQTT_PORT, keepalive=60)
+        c.loop_start()
+
+        # Payload handling
+        if is_json:
+            if isinstance(payload, (dict, list)):
+                msg = json.dumps(payload, separators=(",", ":"))
+                print("[DEBUG] Payload encoded as JSON")
+            else:
+                msg = payload
+                print("[DEBUG] Payload assumed already JSON string")
+        else:
+            msg = str(payload)
+            print("[DEBUG] Payload converted to string")
+
+        print(f"[DEBUG] Final Payload : {msg}")
+
+        # Publish
+        result = c.publish(topic, msg, qos=qos, retain=retain)
+        result.wait_for_publish()
+
+        print(f"[DEBUG] Publish result: rc={result.rc}")
+        if result.rc == mqtt.MQTT_ERR_SUCCESS:
+            print("[DEBUG] Publish SUCCESS")
+        else:
+            print("[ERROR] Publish FAILED")
+
+        c.loop_stop()
+        c.disconnect()
+
+    except Exception as e:
+        print("[EXCEPTION] MQTT publish error!")
+        print(type(e).__name__, ":", e)
+
+    finally:
+        print("===== MQTT PUBLISH DEBUG END =====\n")
+
+
+def determine_status(bpm, spo2):
+    if bpm is None or spo2 is None:
+        return 'warning'
+    if 60 <= bpm <= 100 and spo2 >= 95:
+        return 'normal'
+    if (50 <= bpm < 60 or 100 < bpm <= 120) or (93 <= spo2 < 95):
+        return 'warning'
+    return 'danger'
+
+
+def _safe_float(x):
+    try:
+        return float(x)
+    except Exception:
+        return None
+
+
+def _validate_esp32_batch(payload: dict) -> bool:
+    # minimal schema: user_id + samples + t0_ms/dt_ms + ax/ay/az arrays
+    if not isinstance(payload, dict):
+        return False
+    if "user_id" not in payload or "samples" not in payload:
+        return False
+    for k in ("t0_ms", "dt_ms", "ax", "ay", "az"):
+        if k not in payload:
+            return False
+    if not isinstance(payload["ax"], list) or not isinstance(payload["ay"], list) or not isinstance(payload["az"], list):
+        return False
+    if min(len(payload["ax"]), len(payload["ay"]), len(payload["az"])) == 0:
+        return False
+    if not isinstance(payload["samples"], list) or len(payload["samples"]) == 0:
+        return False
+    return True
+
+
+def _get_motion_params(user: User):
+    height_cm = None
+    step_len_m = None
+    if user.health:
+        height_cm = _safe_float(user.health.height_cm)
+        step_len_m = _safe_float(getattr(user.health, "step_length_m", None))
+    return height_cm, step_len_m
+
+
+# ================= AUTH ROUTES =================
 @app.route('/api/auth/register', methods=['POST'])
 def register():
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     name  = data.get('name')
     email = data.get('email')
     password = data.get('password')
@@ -74,6 +206,7 @@ def register():
     db.session.add(user)
     db.session.commit()
 
+    # create empty health row
     health = UserHealth(user_id=user.id)
     db.session.add(health)
     db.session.commit()
@@ -83,7 +216,7 @@ def register():
 
 @app.route('/api/auth/login', methods=['POST'])
 def login():
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     email    = data.get('email')
     password = data.get('password')
 
@@ -99,7 +232,6 @@ def login():
         app.config['JWT_SECRET_KEY'],
         algorithm="HS256"
     )
-
     return jsonify({'token': token, 'user_id': user.id})
 
 
@@ -109,8 +241,7 @@ def logout(current_user):
     return jsonify({'message': 'Logout sukses (hapus token di client).'})
 
 
-# ============ API HEALTH INFO (BMI) ============
-
+# ================= HEALTH ROUTES =================
 @app.route('/api/user/health', methods=['GET', 'PUT'])
 @token_required
 def user_health(current_user):
@@ -123,160 +254,177 @@ def user_health(current_user):
             'blood_type': health.blood_type,
             'height_cm': float(health.height_cm) if health.height_cm else None,
             'weight_kg': float(health.weight_kg) if health.weight_kg else None,
-            'bmi': float(health.bmi) if health.bmi else None
+            'bmi': float(health.bmi) if health.bmi else None,
+            'step_length_m': float(health.step_length_m) if getattr(health, "step_length_m", None) else None,
         })
 
-    if request.method == 'PUT':
-        data = request.get_json()
-        health.blood_type = data.get('blood_type', health.blood_type)
-        height_cm = data.get('height_cm')
-        weight_kg = data.get('weight_kg')
+    data = request.get_json(silent=True) or {}
+    health.blood_type = data.get('blood_type', health.blood_type)
 
-        if height_cm is not None:
-            health.height_cm = height_cm
-        if weight_kg is not None:
-            health.weight_kg = weight_kg
+    height_cm = data.get('height_cm')
+    weight_kg = data.get('weight_kg')
 
-        if health.height_cm and health.weight_kg:
-            h_m = float(health.height_cm) / 100.0
-            bmi = float(health.weight_kg) / (h_m * h_m)
-            health.bmi = round(bmi, 2)
+    if height_cm is not None:
+        health.height_cm = height_cm
+    if weight_kg is not None:
+        health.weight_kg = weight_kg
 
-        db.session.commit()
-        return jsonify({'message': 'Data health terupdate'})
+    if health.height_cm and health.weight_kg:
+        h_m = float(health.height_cm) / 100.0
+        bmi = float(health.weight_kg) / (h_m * h_m)
+        health.bmi = round(bmi, 2)
+
+    db.session.commit()
+    return jsonify({'message': 'Data health terupdate'})
 
 
-# ============ DEBUG PPG ============
-
-@app.route('/api/debug/ppg/<int:user_id>', methods=['GET'])
+@app.route('/api/health/step-length', methods=['POST'])
 @token_required
-def debug_ppg(current_user, user_id):
-    if current_user.id != user_id:
-        return jsonify({'message': 'Tidak boleh akses data user lain'}), 403
+def set_step_length(current_user):
+    data = request.get_json(silent=True) or {}
+    step_length_m = data.get('step_length_m')
 
-    limit = int(request.args.get('limit', 20))
+    try:
+        step_length_m = float(step_length_m)
+    except Exception:
+        return jsonify({'message': 'step_length_m harus angka (meter)'}), 400
 
-    readings = (SensorReading.query
-                .filter_by(user_id=user_id)
-                .order_by(SensorReading.recorded_at.desc())
-                .limit(limit)
-                .all())
+    if step_length_m <= 0.2 or step_length_m >= 2.5:
+        return jsonify({'message': 'step_length_m tidak masuk akal (range 0.2 - 2.5 m)'}), 400
 
-    if not readings:
-        return jsonify({'message': 'Belum ada data sensor untuk user ini'}), 404
+    health = current_user.health
+    if not health:
+        health = UserHealth(user_id=current_user.id)
+        db.session.add(health)
 
-    data = []
-    for r in readings:
-        data.append({
-            'recorded_at': r.recorded_at.isoformat(),
-            'ir_value': int(r.ir_value) if r.ir_value is not None else None,
-            'red_value': int(r.red_value) if r.red_value is not None else None,
-            'bpm': float(r.bpm) if r.bpm is not None else None,
-            'spo2': float(r.spo2) if r.spo2 is not None else None,
-            'status': r.status
-        })
-
-    data = list(reversed(data))
+    health.step_length_m = step_length_m
+    db.session.commit()
 
     return jsonify({
-        'user_id': user_id,
-        'count': len(data),
-        'records': data
-    })
+        'message': 'step_length_m tersimpan',
+        'user_id': current_user.id,
+        'step_length_m': float(step_length_m)
+    }), 200
 
 
-# ============ PPG & INGESTION LOGIC ============
+# ================= INTERNAL INGEST (FROM MQTT SUBSCRIBER) =================
+def ingest_api_key_required():
+    key = request.headers.get("X-API-KEY")
+    return key and key == app.config["INGEST_API_KEY"]
 
-def compute_bpm_spo2_steps_speed(user_id, ir_value, red_value, accel_x, accel_y, accel_z):
-    """
-    Hitung BPM & SpO2.
-    - Pakai ppg_processor untuk algoritma PPG
-    - Kalau algoritma belum menghasilkan nilai (None), fallback ke nilai approx
-      supaya bpm & spo2 di DB tidak NULL.
-    """
+
+@app.post("/api/ingest-esp32-batch")
+def ingest_esp32_batch():
+    # internal endpoint, protected by shared key
+    if not ingest_api_key_required():
+        return jsonify({"message": "Unauthorized"}), 401
+
+    payload = request.get_json(silent=True) or {}
+    if not _validate_esp32_batch(payload):
+        return jsonify({"message": "Invalid ESP32 batch payload"}), 400
+
+    user_id = int(payload["user_id"])
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"message": "User tidak ditemukan"}), 404
+
+    # 1) PPG processing over samples[]
+    samples = payload["samples"]
+    last_ir = None
+    last_red = None
     bpm = None
     spo2 = None
 
-    if ir_value is not None and red_value is not None:
+    for s in samples:
+        ir = s.get("ir")
+        red = s.get("red")
+        last_ir = ir
+        last_red = red
+        if ir is None or red is None:
+            continue
+
         try:
-            bpm, spo2 = ppg_processor.add_sample(user_id, ir_value, red_value)
-        except Exception as e:
-            print(f"[PPG] Error add_sample user={user_id}: {e}")
+            bpm, spo2 = ppg_processor.add_sample(user_id, ir, red)
+        except Exception:
             bpm, spo2 = None, None
 
-    # Fallback kalau algoritma belum punya hasil
-    if bpm is None:
-        bpm = 75 + (int(ir_value) % 5) if ir_value is not None else 75
+        # fallback (same spirit as your existing logic) :contentReference[oaicite:6]{index=6}
+        if bpm is None:
+            try:
+                bpm = 75 + (int(ir) % 5)
+            except Exception:
+                bpm = 75
+        if spo2 is None:
+            spo2 = 97.0
 
-    if spo2 is None:
-        spo2 = 97.0
-
-    steps = 0
-    speed_mps = 0.0
-
-    print(f"[PPG] user={user_id} ir={ir_value} red={red_value} -> bpm={bpm}, spo2={spo2}")
-    return bpm, spo2, steps, speed_mps
-
-
-def determine_status(bpm, spo2):
-    if bpm is None or spo2 is None:
-        return 'warning'
-    if 60 <= bpm <= 100 and spo2 >= 95:
-        return 'normal'
-    if (50 <= bpm < 60 or 100 < bpm <= 120) or (93 <= spo2 < 95):
-        return 'warning'
-    return 'danger'
-
-
-@app.route('/api/ingest', methods=['POST'])
-def ingest():
-    data = request.get_json()
-    user_id = data.get('user_id')
-    if not user_id:
-        return jsonify({'message': 'user_id wajib diisi'}), 400
-
-    user = User.query.get(user_id)
-    if not user:
-        return jsonify({'message': 'User tidak ditemukan'}), 404
-
-    ir_value  = data.get('ir_value')
-    red_value = data.get('red_value')
-    temp_c    = data.get('temp_c')
-    humidity  = data.get('humidity')
-    accel_x   = data.get('accel_x')
-    accel_y   = data.get('accel_y')
-    accel_z   = data.get('accel_z')
-    activity  = data.get('activity')
-
-    bpm, spo2, steps, speed_mps = compute_bpm_spo2_steps_speed(
-        user.id, ir_value, red_value, accel_x, accel_y, accel_z
+    # 2) Motion from accel time-series
+    height_cm, step_len_m = _get_motion_params(user)
+    steps, speed_mps = compute_steps_speed_from_batch(
+        payload,
+        height_cm=height_cm,
+        calibrated_step_length_m=step_len_m,
     )
+
     status = determine_status(bpm, spo2)
 
+    # Save reading (store last accel sample for accel_x/y/z columns)
+    ax = payload.get("ax", [])
+    ay = payload.get("ay", [])
+    az = payload.get("az", [])
+    accel_x = float(ax[-1]) if ax else None
+    accel_y = float(ay[-1]) if ay else None
+    accel_z = float(az[-1]) if az else None
+
     reading = SensorReading(
-        user_id=user.id,
-        ir_value=ir_value,
-        red_value=red_value,
-        temp_c=temp_c,
-        humidity=humidity,
+        user_id=user_id,
+        ir_value=last_ir,
+        red_value=last_red,
+        temp_c=_safe_float(payload.get("temp_c")),
+        humidity=_safe_float(payload.get("humidity")),
         accel_x=accel_x,
         accel_y=accel_y,
         accel_z=accel_z,
         bpm=bpm,
         spo2=spo2,
-        steps=steps,
-        speed_mps=speed_mps,
-        activity=activity,
-        status=status
+        steps=int(steps),
+        speed_mps=float(speed_mps),
+        status=status,
+        activity=None,  # keep NULL (as you requested)
     )
     db.session.add(reading)
     db.session.commit()
 
-    return jsonify({'message': 'Data tersimpan', 'reading_id': reading.id}), 201
+    # Publish status to ESP32
+    mqtt_publish(
+        STATUS_TOPIC,
+        {"user_id": user_id, "bpm": bpm, "spo2": spo2, "status": status},
+        qos=0,
+        retain=False,
+        is_json=True,
+    )
 
+    # Publish motion summary (only steps + speed_mps)
+    motion_payload = build_motion_payload(user_id, steps, speed_mps)
+    mqtt_publish(
+        MOTION_TOPIC,
+        motion_payload,
+        qos=0,
+        retain=False,
+        is_json=True,
+    )
 
-# ============ API DASHBOARD ============
+    speed_kmh = float(speed_mps) * 3.6
 
+    return jsonify({
+        "message": "OK",
+        "reading_id": reading.id,
+        "user_id": user_id,
+        "steps": int(steps),
+        "speed_kmh": round(speed_kmh, 2),
+        "status": status,
+    }), 200
+
+# ================= DASHBOARD / HISTORY (unchanged core) =================
 @app.route('/api/dashboard/<int:user_id>', methods=['GET'])
 @token_required
 def dashboard(current_user, user_id):
@@ -358,8 +506,6 @@ def user_profile(current_user):
         return jsonify({'message': 'Profil user berhasil diperbarui'})
 
 
-# ============ API HISTORY & STATS ============
-
 @app.route('/api/history/<int:user_id>', methods=['GET'])
 @token_required
 def history(current_user, user_id):
@@ -383,6 +529,8 @@ def history(current_user, user_id):
             'spo2': float(r.spo2) if r.spo2 is not None else None,
             'temp_c': float(r.temp_c) if r.temp_c is not None else None,
             'humidity': float(r.humidity) if r.humidity is not None else None,
+            'speed_mps': float(r.speed_mps) if r.speed_mps is not None else None,
+            'steps': r.steps,
             'activity': r.activity,
             'status': r.status
         })
@@ -428,6 +576,38 @@ def db_check():
     except Exception as e:
         print(f"[DB CHECK] Error: {e}")
         return jsonify({'ok': False, 'error': str(e)}), 500
+
+# ================= Publish user session (ESP32 expects integer plain) =================
+def is_safe_topic(topic: str) -> bool:
+    if not isinstance(topic, str):
+        return False
+    topic = topic.strip()
+    if not topic or len(topic) > 256:
+        return False
+    if "\x00" in topic:
+        return False
+    if "+" in topic or "#" in topic:
+        return False
+    return True
+
+
+@app.post("/api/publish-user")
+@token_required
+def publish_current_user(current_user):
+    body = request.get_json(silent=True) or {}
+    topic = body.get("topic")
+
+    if not is_safe_topic(topic):
+        return jsonify({"message": "Invalid topic"}), 400
+
+    # ESP32 SESSION handler expects plain integer string
+    try:
+        mqtt_publish(topic, current_user.id, qos=0, retain=False, is_json=False)
+    except Exception as e:
+        return jsonify({"message": "Failed to publish", "error": str(e)}), 502
+
+    return jsonify({"message": "Published", "topic": topic, "user_id": current_user.id}), 200
+
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0')
