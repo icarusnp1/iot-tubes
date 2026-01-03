@@ -327,6 +327,36 @@ def dashboard(current_user, user_id):
     }
     return jsonify(response)
 
+# ============ API USER PROFILE (FROM USERS TABLE) ============
+
+@app.route('/api/user/profile', methods=['GET', 'PUT'])
+@token_required
+def user_profile(current_user):
+    # GET → ambil dari tabel users
+    if request.method == 'GET':
+        return jsonify({
+            'id': current_user.id,
+            'name': current_user.name,
+            'email': current_user.email,
+            'date_of_birth': current_user.date_of_birth.isoformat()
+            if current_user.date_of_birth else None
+        })
+
+    # PUT → update tabel users
+    if request.method == 'PUT':
+        data = request.get_json()
+
+        if 'name' in data:
+            current_user.name = data['name']
+
+        if 'date_of_birth' in data and data['date_of_birth']:
+            current_user.date_of_birth = datetime.datetime.strptime(
+                data['date_of_birth'], '%Y-%m-%d'
+            ).date()
+
+        db.session.commit()
+        return jsonify({'message': 'Profil user berhasil diperbarui'})
+
 
 # ============ API HISTORY & STATS ============
 

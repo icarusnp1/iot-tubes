@@ -1,4 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../services/api_service.dart';
+import 'dart:io';
+import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class DataUserPage extends StatefulWidget {
   const DataUserPage({super.key});
@@ -8,57 +13,106 @@ class DataUserPage extends StatefulWidget {
 }
 
 class _DataUserPageState extends State<DataUserPage> {
+  final ApiService apiService = ApiService();
+
+  int? userId;
+  int page = 1;
+  int limit = 20;
+  int total = 0;
+
+  bool loading = false;
+  String errorMsg = '';
+
+  List<Map<String, dynamic>> records = [];
+
   String dateFilter = 'today';
   String searchQuery = '';
   final TextEditingController searchController = TextEditingController();
 
-  final List<Map<String, dynamic>> healthRecords = [
-    {
-      'id': 1,
-      'timestamp': '2024-10-31 14:30:25',
-      'bpm': 75,
-      'spo2': 98,
-      'temperature': 36.5,
-      'activity': 'Jalan',
-      'status': 'normal'
-    },
-    {
-      'id': 2,
-      'timestamp': '2024-10-31 14:15:10',
-      'bpm': 82,
-      'spo2': 97,
-      'temperature': 36.6,
-      'activity': 'Joging',
-      'status': 'normal'
-    },
-    {
-      'id': 3,
-      'timestamp': '2024-10-31 14:00:45',
-      'bpm': 68,
-      'spo2': 99,
-      'temperature': 36.4,
-      'activity': 'Diam',
-      'status': 'normal'
-    },
-    {
-      'id': 4,
-      'timestamp': '2024-10-31 13:45:30',
-      'bpm': 105,
-      'spo2': 96,
-      'temperature': 37.0,
-      'activity': 'Lari',
-      'status': 'warning'
-    },
-    {
-      'id': 5,
-      'timestamp': '2024-10-31 13:30:15',
-      'bpm': 72,
-      'spo2': 98,
-      'temperature': 36.5,
-      'activity': 'Jalan',
-      'status': 'normal'
-    },
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _loadSessionAndHistory();
+  }
+
+  Future<void> _loadSessionAndHistory() async {
+    final prefs = await SharedPreferences.getInstance();
+    final uid = prefs.getInt('user_id');
+    setState(() {
+      userId = uid;
+    });
+    if (userId == null) {
+      setState(() {
+        errorMsg = 'User belum login (user_id tidak ditemukan).';
+      });
+      return;
+    }
+    await _loadHistory();
+  }
+
+  Future<void> _loadHistory() async {
+    if (userId == null) return;
+
+    setState(() {
+      loading = true;
+      errorMsg = '';
+    });
+
+    final endpoint = '/api/history/$userId?page=$page&limit=$limit';
+    final res = await apiService.get(endpoint, auth: true);
+
+    if (!mounted) return;
+    setState(() {
+      loading = false;
+    });
+
+    if (res['success'] == true && res['data'] != null) {
+      try {
+        final data = res['data'] as Map<String, dynamic>;
+        final List<dynamic> items = data['data'] ?? [];
+        records = items.map<Map<String, dynamic>>((e) {
+          return Map<String, dynamic>.from(e as Map);
+        }).toList();
+
+        page = data['page'] != null ? (data['page'] as num).toInt() : page;
+        limit = data['limit'] != null ? (data['limit'] as num).toInt() : limit;
+        total = data['total'] != null ? (data['total'] as num).toInt() : total;
+        errorMsg = '';
+      } catch (e) {
+        setState(() {
+          errorMsg = 'Format response tidak sesuai: $e';
+        });
+      }
+    } else {
+      String m = res['message'] ?? 'Gagal memuat riwayat';
+      setState(() {
+        errorMsg = m;
+      });
+    }
+  }
+
+  void _prevPage() {
+    if (page > 1) {
+      setState(() => page--);
+      _loadHistory();
+    }
+  }
+
+  void _nextPage() {
+    final maxPage = (total / limit).ceil();
+    if (page < maxPage) {
+      setState(() => page++);
+      _loadHistory();
+    }
+  }
+
+  void _changeLimit(int newLimit) {
+    setState(() {
+      limit = newLimit;
+      page = 1;
+    });
+    _loadHistory();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -98,14 +152,14 @@ class _DataUserPageState extends State<DataUserPage> {
             children: [
               _buildStatCard(
                 'Total Records',
-                '1,247',
+                total.toString(),
                 Icons.favorite,
                 const Color(0xFF0077B6),
                 isDarkMode,
               ),
               _buildStatCard(
                 'Rata-rata BPM',
-                '75',
+                _calculateAvgBpm().toString(),
                 Icons.favorite,
                 const Color(0xFF2ECC71),
                 isDarkMode,
@@ -113,7 +167,7 @@ class _DataUserPageState extends State<DataUserPage> {
               ),
               _buildStatCard(
                 'Rata-rata SpO₂',
-                '98%',
+                '${_calculateAvgSpo2().toStringAsFixed(1)}%',
                 Icons.water_drop,
                 const Color(0xFFFF9800),
                 isDarkMode,
@@ -238,166 +292,286 @@ class _DataUserPageState extends State<DataUserPage> {
           ),
           const SizedBox(height: 24),
 
-          // Data Table
-          Container(
-            decoration: BoxDecoration(
-              color: isDarkMode ? const Color(0xFF2d3748) : Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
+          // Error or Loading
+          if (errorMsg.isNotEmpty) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red[50],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(errorMsg, style: const TextStyle(color: Colors.red)),
             ),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                headingRowColor: WidgetStateProperty.all(
-                  isDarkMode
-                      ? Colors.grey[800]!.withOpacity(0.5)
-                      : Colors.grey[50],
-                ),
-                columns: [
-                  DataColumn(
-                    label: Text(
-                      'Waktu',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: isDarkMode ? Colors.grey[300] : Colors.grey[900],
-                      ),
-                    ),
-                  ),
-                  DataColumn(
-                    label: Text(
-                      'BPM',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: isDarkMode ? Colors.grey[300] : Colors.grey[900],
-                      ),
-                    ),
-                  ),
-                  DataColumn(
-                    label: Text(
-                      'SpO₂',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: isDarkMode ? Colors.grey[300] : Colors.grey[900],
-                      ),
-                    ),
-                  ),
-                  DataColumn(
-                    label: Text(
-                      'Suhu',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: isDarkMode ? Colors.grey[300] : Colors.grey[900],
-                      ),
-                    ),
-                  ),
-                  DataColumn(
-                    label: Text(
-                      'Aktivitas',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: isDarkMode ? Colors.grey[300] : Colors.grey[900],
-                      ),
-                    ),
-                  ),
-                  DataColumn(
-                    label: Text(
-                      'Status',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: isDarkMode ? Colors.grey[300] : Colors.grey[900],
-                      ),
-                    ),
+            const SizedBox(height: 12),
+          ],
+
+          if (loading) ...[
+            const Center(child: CircularProgressIndicator()),
+            const SizedBox(height: 12),
+          ],
+
+          // Data Table
+          if (!loading && records.isNotEmpty)
+            Container(
+              decoration: BoxDecoration(
+                color: isDarkMode ? const Color(0xFF2d3748) : Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
                   ),
                 ],
-                rows: healthRecords.map((record) {
-                  return DataRow(
-                    cells: [
-                      DataCell(
-                        Text(
-                          record['timestamp'],
-                          style: TextStyle(
-                            color: isDarkMode ? Colors.grey[300] : Colors.grey[900],
-                          ),
+              ),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: DataTable(
+                  headingRowColor: WidgetStateProperty.all(
+                    isDarkMode
+                        ? Colors.grey[800]!.withOpacity(0.5)
+                        : Colors.grey[50],
+                  ),
+                  columns: [
+                    DataColumn(
+                      label: Text(
+                        'Waktu',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: isDarkMode ? Colors.grey[300] : Colors.grey[900],
                         ),
                       ),
-                      DataCell(
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.favorite,
-                              size: 16,
-                              color: Color(0xFFE53935),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              '${record['bpm']}',
-                              style: TextStyle(
-                                color: isDarkMode ? Colors.grey[300] : Colors.grey[900],
+                    ),
+                    DataColumn(
+                      label: Text(
+                        'BPM',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: isDarkMode ? Colors.grey[300] : Colors.grey[900],
+                        ),
+                      ),
+                    ),
+                    DataColumn(
+                      label: Text(
+                        'SpO₂',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: isDarkMode ? Colors.grey[300] : Colors.grey[900],
+                        ),
+                      ),
+                    ),
+                    DataColumn(
+                      label: Text(
+                        'Suhu',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: isDarkMode ? Colors.grey[300] : Colors.grey[900],
+                        ),
+                      ),
+                    ),
+                    DataColumn(
+                      label: Text(
+                        'Aktivitas',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: isDarkMode ? Colors.grey[300] : Colors.grey[900],
+                        ),
+                      ),
+                    ),
+                    DataColumn(
+                      label: Text(
+                        'Status',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: isDarkMode ? Colors.grey[300] : Colors.grey[900],
+                        ),
+                      ),
+                    ),
+                  ],
+                  rows: records
+                      .where((record) {
+                        if (searchQuery.isEmpty) return true;
+                        final activity = (record['activity'] ?? '').toString().toLowerCase();
+                        final status = (record['status'] ?? '').toString().toLowerCase();
+                        final query = searchQuery.toLowerCase();
+                        return activity.contains(query) || status.contains(query);
+                      })
+                      .map((record) {
+                        final time = _formatTime(record['time'] ?? record['timestamp']);
+                        final bpm = record['bpm']?.toString() ?? '-';
+                        final spo2 = record['spo2']?.toString() ?? '-';
+                        final temp = record['temp_c'] != null ? '${record['temp_c']}' : '-';
+                        final activity = record['activity'] ?? '-';
+                        final status = record['status'] ?? '-';
+
+                        return DataRow(
+                          cells: [
+                            DataCell(
+                              Text(
+                                time,
+                                style: TextStyle(
+                                  color: isDarkMode ? Colors.grey[300] : Colors.grey[900],
+                                ),
                               ),
                             ),
-                          ],
-                        ),
-                      ),
-                      DataCell(
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.water_drop,
-                              size: 16,
-                              color: Color(0xFF0077B6),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              '${record['spo2']}%',
-                              style: TextStyle(
-                                color: isDarkMode ? Colors.grey[300] : Colors.grey[900],
+                            DataCell(
+                              Row(
+                                children: [
+                                  const Icon(
+                                    Icons.favorite,
+                                    size: 16,
+                                    color: Color(0xFFE53935),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    bpm,
+                                    style: TextStyle(
+                                      color: isDarkMode ? Colors.grey[300] : Colors.grey[900],
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                          ],
-                        ),
-                      ),
-                      DataCell(
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.thermostat,
-                              size: 16,
-                              color: Color(0xFFFF9800),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              '${record['temperature']}°C',
-                              style: TextStyle(
-                                color: isDarkMode ? Colors.grey[300] : Colors.grey[900],
+                            DataCell(
+                              Row(
+                                children: [
+                                  const Icon(
+                                    Icons.water_drop,
+                                    size: 16,
+                                    color: Color(0xFF0077B6),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    '$spo2%',
+                                    style: TextStyle(
+                                      color: isDarkMode ? Colors.grey[300] : Colors.grey[900],
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
+                            DataCell(
+                              Row(
+                                children: [
+                                  const Icon(
+                                    Icons.thermostat,
+                                    size: 16,
+                                    color: Color(0xFFFF9800),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    '${temp}°C',
+                                    style: TextStyle(
+                                      color: isDarkMode ? Colors.grey[300] : Colors.grey[900],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            DataCell(
+                              Text(
+                                activity,
+                                style: TextStyle(
+                                  color: isDarkMode ? Colors.grey[300] : Colors.grey[900],
+                                ),
+                              ),
+                            ),
+                            DataCell(_getStatusBadge(status)),
                           ],
-                        ),
-                      ),
-                      DataCell(
-                        Text(
-                          record['activity'],
-                          style: TextStyle(
-                            color: isDarkMode ? Colors.grey[300] : Colors.grey[900],
-                          ),
-                        ),
-                      ),
-                      DataCell(_getStatusBadge(record['status'])),
-                    ],
-                  );
-                }).toList(),
+                        );
+                      })
+                      .toList(),
+                ),
               ),
             ),
-          ),
+
+          if (!loading && records.isEmpty && errorMsg.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: isDarkMode ? Colors.grey[800] : Colors.grey[100],
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text('Belum ada data riwayat'),
+            ),
+
+          const SizedBox(height: 24),
+
+          // Pagination Controls
+          if (!loading && records.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: isDarkMode ? const Color(0xFF2d3748) : Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Total: $total'),
+                      DropdownButton<int>(
+                        value: limit,
+                        items: const [
+                          DropdownMenuItem(value: 10, child: Text('10')),
+                          DropdownMenuItem(value: 20, child: Text('20')),
+                          DropdownMenuItem(value: 50, child: Text('50')),
+                        ],
+                        onChanged: (v) {
+                          if (v == null) return;
+                          _changeLimit(v);
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      TextButton(
+                        onPressed: page > 1 ? _prevPage : null,
+                        child: const Text('← Prev'),
+                      ),
+                      const SizedBox(width: 16),
+                      Text(
+                        'Page $page of ${(total == 0 ? 1 : (total + limit - 1) ~/ limit)}',
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(width: 16),
+                      TextButton(
+                        onPressed: (page * limit) < total ? _nextPage : null,
+                        child: const Text('Next →'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
+  }
+
+  double _calculateAvgBpm() {
+    if (records.isEmpty) return 0;
+    final validBpms = records.where((r) => r['bpm'] != null).map((r) => (r['bpm'] as num).toDouble());
+    if (validBpms.isEmpty) return 0;
+    return validBpms.reduce((a, b) => a + b) / validBpms.length;
+  }
+
+  double _calculateAvgSpo2() {
+    if (records.isEmpty) return 0;
+    final validSpo2s = records.where((r) => r['spo2'] != null).map((r) => (r['spo2'] as num).toDouble());
+    if (validSpo2s.isEmpty) return 0;
+    return validSpo2s.reduce((a, b) => a + b) / validSpo2s.length;
   }
 
   Widget _buildStatCard(
@@ -502,18 +676,124 @@ class _DataUserPageState extends State<DataUserPage> {
     );
   }
 
-  void _handleExport() {
+  Future<void> _handleExport() async {
+  if (records.isEmpty) {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Data akan diexport ke file CSV'),
-        backgroundColor: Color(0xFF2ECC71),
+        content: Text('Tidak ada data untuk diexport'),
+        backgroundColor: Colors.orange,
       ),
     );
+    return;
+  }
+
+  try {
+    // Request storage permission
+    final status = await Permission.storage.request();
+
+    if (status.isDenied) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Izin penyimpanan ditolak'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    if (status.isDenied) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Izin penyimpanan ditolak secara permanen. Aktifkan di Pengaturan.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // Build CSV content
+    final csv = _generateCSV();
+    
+    // Get download directory
+    final directory = await getExternalStorageDirectory();
+    if (directory == null) throw Exception('Tidak dapat mengakses folder penyimpanan aplikasi');
+
+    // optional: create a "Downloads" subfolder inside the app dir
+    final appDownloadsDir = Directory('${directory.path}/IoT-Tubes-Exports');
+    if (!await appDownloadsDir.exists()) await appDownloadsDir.create(recursive: true);
+
+    // Create filename with timestamp
+    final timestamp = DateTime.now().toString().replaceAll(RegExp(r'[^0-9]'), '').substring(0, 14);
+    final filename = 'health_records_$timestamp.csv';
+    final filepath = '${directory.path}/$filename';
+
+    // Write file
+    final file = File(filepath);
+    await file.writeAsString(csv);
+    
+    print("Exporting CSV: Written to $filepath");
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('File disimpan ke: $filename'),
+        backgroundColor: const Color(0xFF2ECC71),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  } catch (e) {
+    if (!mounted) return;
+    print("Error Exporting CSV: $e");
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Gagal export: $e'),
+        backgroundColor: Colors.red,
+      ),
+    );
+  }
+}
+
+  String _generateCSV() {
+    // Header row
+    final headers = ['Waktu', 'BPM', 'SpO₂', 'Suhu (°C)', 'Aktivitas', 'Status', 'Kelembaban'];
+    
+    // Data rows
+    final rows = records.map((record) {
+      final time = _formatTime(record['time'] ?? record['timestamp']) ?? '-';
+      final bpm = record['bpm']?.toString() ?? '-';
+      final spo2 = record['spo2']?.toString() ?? '-';
+      final temp = record['temp_c']?.toString() ?? '-';
+      final activity = record['activity']?.toString() ?? '-';
+      final status = record['status']?.toString() ?? '-';
+      final humidity = record['humidity']?.toString() ?? '-';
+
+      // Escape quotes and wrap in quotes if contains comma
+      final escape = (String s) => '"${s.replaceAll('"', '""')}"';
+      
+      return [time, bpm, spo2, temp, activity, status, humidity]
+          .map((v) => v.contains(',') || v.contains('"') ? escape(v) : v)
+          .join(',');
+    }).toList();
+
+    // Combine header and rows
+    return [headers.join(','), ...rows].join('\n');
   }
 
   @override
   void dispose() {
     searchController.dispose();
     super.dispose();
+  }
+
+    String _formatTime(String? rawTime) {
+    if (rawTime == null || rawTime.isEmpty) return '-';
+    try {
+      final dateTime = DateTime.parse(rawTime);
+      return '${dateTime.day.toString().padLeft(2, '0')}/${dateTime.month.toString().padLeft(2, '0')}/${dateTime.year} ${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
+    } catch (e) {
+      return rawTime;
+    }
   }
 }

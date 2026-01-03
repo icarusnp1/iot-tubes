@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'login_page.dart';
+import '../services/api_service.dart';
+import '../services/api_config.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -17,6 +19,7 @@ class _RegisterPageState extends State<RegisterPage> {
   final TextEditingController dobC = TextEditingController();
 
   bool loading = false;
+  final ApiService apiService = ApiService();
 
   Future<void> _pickDate() async {
     DateTime? picked = await showDatePicker(
@@ -31,13 +34,14 @@ class _RegisterPageState extends State<RegisterPage> {
     }
   }
 
-  void register() {
-    String user = nameC.text;
+  Future<void> register() async {
+    String name = nameC.text;
     String pass = passC.text;
     String email = emailC.text;
     String dob = dobC.text;
 
-    if (user.isEmpty || pass.isEmpty || email.isEmpty || dob.isEmpty) {
+    // Validation
+    if (name.isEmpty || pass.isEmpty || email.isEmpty || dob.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text("Semua field harus diisi!"),
@@ -45,41 +49,68 @@ class _RegisterPageState extends State<RegisterPage> {
         ),
       );
       return;
+    }
+
+    // Email regex validation
+    RegExp emailRegex = RegExp(r'^[^@]+@[^@]+\.[^@]+');
+    if (!emailRegex.hasMatch(email)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Format email tidak valid!"),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      loading = true;
+    });
+
+    // Prepare request body
+    Map<String, dynamic> body = {
+      'name': name,
+      'email': email,
+      'password': pass,
+      'date_of_birth': dob,
+    };
+
+    // Call API
+    final result = await apiService.post(ApiConfig.dbRegisterEndpoint, body);
+
+    if (!mounted) return;
+
+    setState(() {
+      loading = false;
+    });
+
+    if (result['success']) {
+      // Success
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Pendaftaran berhasil! Silakan login."),
+          backgroundColor: Colors.green,
+        ),
+      );
+
+      // Navigate back to login
+      Navigator.pop(context);
     } else {
-      
-      // Regex sederhana untuk validasi email
-      RegExp emailRegex = RegExp(r'^[^@]+@[^@]+\.[^@]+');
-      if (!emailRegex.hasMatch(email)) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Format email tidak valid!"),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
+      // Error
+      String errorMsg = result['message'] ?? 'Pendaftaran gagal';
+      if (result['data'] != null && result['data']['message'] != null) {
+        errorMsg = result['data']['message'];
       }
 
-      setState(() {
-        loading = true;
-      });
+      // Log the error for debugging
+      print('Registration Error: $errorMsg');
 
-      // Simulasi proses pendaftaran
-      Future.delayed(const Duration(seconds: 2), () {
-        setState(() {
-          loading = false;
-        });
-
-        // Tampilkan pesan sukses
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Pendaftaran berhasil!"),
-            backgroundColor: Colors.green,
-          ),
-        );
-
-        // Kembali ke halaman login
-        Navigator.pop(context);
-      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(errorMsg),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -245,6 +276,7 @@ class _RegisterPageState extends State<RegisterPage> {
 
                   const SizedBox(height: 25),
 
+                  // Register Button
                   Container(
                     width: double.infinity,
                     height: 48,
@@ -255,27 +287,30 @@ class _RegisterPageState extends State<RegisterPage> {
                       ),
                     ),
                     child: TextButton(
-                      onPressed: register,
-                      child: const Text(
-                        "Register",
-                        style: TextStyle(color: Colors.white, fontSize: 16),
-                      ),
+                      onPressed: loading ? null : register,
+                      child: loading
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            )
+                          : const Text(
+                              "Register",
+                              style: TextStyle(color: Colors.white, fontSize: 16),
+                            ),
                     ),
                   ),
-
                   const SizedBox(height: 12),
                   TextButton(
                     onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const LoginPage()),
-                      );
+                      Navigator.pop(context);
                     },
                     child: const Text("Sudah punya akun? Login"),
                   ),
-
                   const SizedBox(height: 12),
-
                   const Text(
                     "© 2024 IoT Heart Monitoring System",
                     style: TextStyle(fontSize: 12, color: Colors.grey),
@@ -287,5 +322,14 @@ class _RegisterPageState extends State<RegisterPage> {
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    nameC.dispose();
+    emailC.dispose();
+    passC.dispose();
+    dobC.dispose();
+    super.dispose();
   }
 }
