@@ -2,7 +2,7 @@ import { MetricCard } from '../dashboard/MetricCard';
 import { HealthStatusCard } from '../dashboard/HealthStatusCard';
 import { ChartCard } from '../dashboard/ChartCard';
 import { SyncPanel } from '../dashboard/SyncPanel';
-import { ActivityIndicator } from '../dashboard/ActivityIndicator';
+//import { ActivityIndicator } from '../dashboard/ActivityIndicator';
 import { Heart, Droplets, Thermometer, Wind, Gauge, Footprints, Flame, Activity } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
@@ -148,7 +148,7 @@ export function DashboardPage({ isDarkMode, userId }: DashboardPageProps) {
         </div>
       </div>
 
-      {/* TEMPERATUR */}
+      {/* TEMPERATUR
       <div className="mb-8">
         <div className="flex items-center gap-3 mb-4">
           <div className="p-2 bg-gradient-to-r from-[#FF9800] to-[#F57C00] rounded-lg">
@@ -178,7 +178,7 @@ export function DashboardPage({ isDarkMode, userId }: DashboardPageProps) {
             mainColor={humidityStatus.color}
           />
         </div>
-      </div>
+      </div> */}
 
       {/* AKTIVITAS */}
       <div className="mb-8">
@@ -218,7 +218,7 @@ export function DashboardPage({ isDarkMode, userId }: DashboardPageProps) {
           />
         </div>
 
-        <ActivityIndicator activity={data.activity as any} isDarkMode={isDarkMode} />
+        {/* <ActivityIndicator activity={data.activity as any} isDarkMode={isDarkMode} /> */}
       </div>
 
       {/* GRAFIK */}

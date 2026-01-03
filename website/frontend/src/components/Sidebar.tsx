@@ -21,7 +21,7 @@ export function Sidebar({
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'data-user', label: 'Data User', icon: Users },
     { id: 'profile', label: 'Profil', icon: User },
-    { id: 'settings', label: 'Pengaturan', icon: Settings },
+    //{ id: 'settings', label: 'Pengaturan', icon: Settings },
   ];
 
   const handleNavClick = (page: string) => {

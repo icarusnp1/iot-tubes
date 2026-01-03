@@ -23,10 +23,24 @@ export default function App() {
   setCurrentPage('dashboard');
 };
 
-  const handleLogout = () => {
-    setIsLoggedIn(false);
-    setCurrentPage('dashboard');
-  };
+  const handleLogout = async () => {
+  try {
+    await fetch("http://localhost/sem5/iot-tubes/website/backend/logout.php", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      }
+    });
+  } catch (err) {
+    console.error("Logout error:", err);
+  }
+
+  setIsLoggedIn(false);   
+  setUserId(null);   
+  // 🔴 bersihkan frontend state
+  localStorage.removeItem("user_id");
+  setCurrentPage("login");
+};
 
   if (!isLoggedIn) {
   if (currentPage === "register") {

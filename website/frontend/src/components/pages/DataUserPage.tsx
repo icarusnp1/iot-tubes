@@ -80,8 +80,8 @@ const handleExport = () => {
     Waktu: r.timestamp,
     BPM: r.bpm ?? "-",
     SpO2: r.spo2 ?? "-",
-    Suhu: r.temperature ?? "-",
-    Aktivitas: r.activity ?? "-",
+    //Suhu: r.temperature ?? "-",
+    //Aktivitas: r.activity ?? "-",
     Status: r.status ?? "-",
   }));
 
@@ -231,7 +231,7 @@ const avgSpo2 =
             className="bg-gradient-to-r from-[#2ECC71] to-[#0077B6] text-white"
           >
             <Download className="w-4 h-4 mr-2" />
-            Export CSV
+            Export XLSX
           </Button>
         </div>
       </Card>
@@ -245,8 +245,8 @@ const avgSpo2 =
                 <TableHead>Waktu</TableHead>
                 <TableHead>BPM</TableHead>
                 <TableHead>SpO₂</TableHead>
-                <TableHead>Suhu</TableHead>
-                <TableHead>Aktivitas</TableHead>
+                {/* <TableHead>Suhu</TableHead>
+                <TableHead>Aktivitas</TableHead> */}
                 <TableHead>Status</TableHead>
               </TableRow>
             </TableHeader>
@@ -270,14 +270,14 @@ const avgSpo2 =
                     </div>
                   </TableCell>
 
-                  <TableCell>
+                  {/* <TableCell>
                     <div className="flex items-center gap-2">
                       <Thermometer className="w-4 h-4 text-[#FF9800]" />
                       {record.temperature ?? "-"}°C
                     </div>
-                  </TableCell>
+                  </TableCell> */}
 
-                  <TableCell>{record.activity ?? "-"}</TableCell>
+                  {/* <TableCell>{record.activity ?? "-"}</TableCell> */}
                   <TableCell>{getStatusBadge(record.status)}</TableCell>
                 </TableRow>
               ))}
