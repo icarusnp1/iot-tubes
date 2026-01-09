@@ -24,6 +24,9 @@ class _DataUserPageState extends State<DataUserPage> {
   String errorMsg = '';
 
   List<Map<String, dynamic>> records = [];
+  double avgBpm = 0;
+  double avgSpo2 = 0;
+  int totalRecords = 0;
 
   String dateFilter = 'today';
   String searchQuery = '';
@@ -61,6 +64,9 @@ class _DataUserPageState extends State<DataUserPage> {
     final endpoint = '/api/history/$userId?page=$page&limit=$limit';
     final res = await apiService.get(endpoint, auth: true);
 
+    final statsEndpoint = "/api/history/$userId/stats";
+    final statsRes = await apiService.get(statsEndpoint, auth: true);
+
     if (!mounted) return;
     setState(() {
       loading = false;
@@ -89,6 +95,26 @@ class _DataUserPageState extends State<DataUserPage> {
         errorMsg = m;
       });
     }
+
+    if (statsRes['success'] == true && statsRes['data'] != null) {
+      try {
+        final data = statsRes['data'] as Map<String, dynamic>;
+        print(data);
+        avgBpm = (data['avg_bpm'] as num).toDouble();
+        avgSpo2 = (data['avg_spo2'] as num).toDouble();
+        totalRecords = data['total_records'] as int;
+      } catch (e) {
+        setState(() {
+          errorMsg = 'Format response tidak sesuai: $e';
+        });
+      }
+    } else {
+      String m = statsRes['message'] ?? 'Gagal memuat riwayat';
+      setState(() {
+        errorMsg = m;
+      });
+    }
+
   }
 
   void _prevPage() {
@@ -152,14 +178,14 @@ class _DataUserPageState extends State<DataUserPage> {
             children: [
               _buildStatCard(
                 'Total Records',
-                total.toString(),
+                totalRecords.toString(),
                 Icons.favorite,
                 const Color(0xFF0077B6),
                 isDarkMode,
               ),
               _buildStatCard(
                 'Rata-rata BPM',
-                _calculateAvgBpm().toString(),
+                avgBpm.toStringAsFixed(2),
                 Icons.favorite,
                 const Color(0xFF2ECC71),
                 isDarkMode,
@@ -167,7 +193,7 @@ class _DataUserPageState extends State<DataUserPage> {
               ),
               _buildStatCard(
                 'Rata-rata SpO₂',
-                '${_calculateAvgSpo2().toStringAsFixed(1)}%',
+                avgSpo2.toStringAsFixed(2),
                 Icons.water_drop,
                 const Color(0xFFFF9800),
                 isDarkMode,
@@ -558,20 +584,6 @@ class _DataUserPageState extends State<DataUserPage> {
         ],
       ),
     );
-  }
-
-  double _calculateAvgBpm() {
-    if (records.isEmpty) return 0;
-    final validBpms = records.where((r) => r['bpm'] != null).map((r) => (r['bpm'] as num).toDouble());
-    if (validBpms.isEmpty) return 0;
-    return validBpms.reduce((a, b) => a + b) / validBpms.length;
-  }
-
-  double _calculateAvgSpo2() {
-    if (records.isEmpty) return 0;
-    final validSpo2s = records.where((r) => r['spo2'] != null).map((r) => (r['spo2'] as num).toDouble());
-    if (validSpo2s.isEmpty) return 0;
-    return validSpo2s.reduce((a, b) => a + b) / validSpo2s.length;
   }
 
   Widget _buildStatCard(
